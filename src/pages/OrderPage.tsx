@@ -1,29 +1,170 @@
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { CATALOG, CATEGORY_LABELS, type ItemCategory } from "@/data/items";
-import { format, addDays } from "date-fns";
 import OrderSuccess from "./OrderSuccess";
+import { APP_CONFIG } from "@/config/app";
+import { formatIsoDateDdMmYyyy, getIndiaDateIso, shiftIsoDate } from "@/lib/datetime";
 
 interface SelectedItems {
-  [key: string]: number; // key = en name, value = qty
+  [key: string]: number; // key = item code, value = qty
 }
+
+type CategoryFilter = ItemCategory | "all";
+type OrderView = "form" | "summary" | "success";
 
 const OrderPage = () => {
   const [searchParams] = useSearchParams();
   const slug = searchParams.get("r");
 
-  const [activeTab, setActiveTab] = useState<ItemCategory>("vegetables");
+  const [activeTab, setActiveTab] = useState<CategoryFilter>("all");
   const [quantities, setQuantities] = useState<SelectedItems>({});
   const [contactName, setContactName] = useState("");
   const [contactPhone, setContactPhone] = useState("");
   const [notes, setNotes] = useState("");
-  const [submitted, setSubmitted] = useState(false);
+  const [orderView, setOrderView] = useState<OrderView>("form");
   const [orderRef, setOrderRef] = useState("");
+  const [submittedDeliveryDate, setSubmittedDeliveryDate] = useState("");
+  const queryClient = useQueryClient();
 
-  const today = new Date();
-  const tomorrow = addDays(today, 1);
+  const todayIso = getIndiaDateIso();
+  const tomorrowIso = shiftIsoDate(todayIso, 1);
+
+  const OrderSummary = () => {
+    const selectedItems = CATALOG.filter((item) => (quantities[item.code] || 0) > 0);
+
+    return (
+      <div className="min-h-screen bg-background">
+        {/* Sticky Header */}
+        <header className="sticky top-0 z-50 bg-primary border-b border-border">
+          <div className="container max-w-[560px] mx-auto px-4 py-3">
+            <div className="flex items-center gap-2">
+              <span className="text-2xl">{APP_CONFIG.brand.icon}</span>
+              <div>
+                <h1 className="text-lg font-bold text-primary-foreground">{APP_CONFIG.brand.name}</h1>
+                <p className="text-sm text-primary-foreground/80">Order Review</p>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <main className="container max-w-[560px] mx-auto px-4 py-4 pb-32">
+          {/* Order Details */}
+          <section className="bg-card rounded-lg border border-border p-4 mb-4">
+            <h2 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">Order Details</h2>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-xs text-muted-foreground">Order Date</p>
+                <p className="text-sm font-medium">{formatIsoDateDdMmYyyy(todayIso)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Delivery Date</p>
+                <p className="text-sm font-semibold text-accent-foreground bg-accent rounded-md px-2 py-1 inline-block">
+                  {formatIsoDateDdMmYyyy(tomorrowIso)}
+                </p>
+              </div>
+            </div>
+          </section>
+
+          {/* Restaurant Info */}
+          <section className="bg-card rounded-lg border border-border p-4 mb-4">
+            <h2 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">Restaurant</h2>
+            <p className="text-sm font-medium">{restaurant?.name}</p>
+          </section>
+
+          {/* Order Items */}
+          <section className="bg-card rounded-lg border border-border p-4 mb-4">
+            <h2 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">Order Items ({selectedItems.length})</h2>
+            <div className="space-y-2">
+              {selectedItems.map((item) => {
+                const qty = quantities[item.code] || 0;
+                return (
+                  <div key={item.code} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-foreground">{item.en}</p>
+                      <p className="text-xs text-muted-foreground font-hindi">{item.hi}</p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-sm font-medium">{qty} kg</span>
+                      <button
+                        onClick={() => updateQty(item.code, -qty)}
+                        className="w-6 h-6 rounded-md border border-border bg-card text-foreground flex items-center justify-center text-xs hover:bg-destructive hover:text-destructive-foreground hover:border-destructive transition-colors"
+                        aria-label={`Remove ${item.en}`}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* Contact Details */}
+          <section className="bg-card rounded-lg border border-border p-4 mb-4">
+            <h2 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">Contact Details</h2>
+            <div className="space-y-2">
+              {contactName && (
+                <div>
+                  <p className="text-xs text-muted-foreground">Name</p>
+                  <p className="text-sm font-medium">{contactName}</p>
+                </div>
+              )}
+              {contactPhone && (
+                <div>
+                  <p className="text-xs text-muted-foreground">Phone</p>
+                  <p className="text-sm font-medium">{contactPhone}</p>
+                </div>
+              )}
+              {!contactName && !contactPhone && (
+                <p className="text-sm text-muted-foreground italic">No contact information provided</p>
+              )}
+            </div>
+          </section>
+
+          {/* Special Instructions */}
+          {notes && (
+            <section className="bg-card rounded-lg border border-border p-4 mb-4">
+              <h2 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">Special Instructions</h2>
+              <p className="text-sm text-foreground">{notes}</p>
+            </section>
+          )}
+
+          {/* Disclaimer */}
+          <div className="bg-warning rounded-lg border border-warning-foreground/20 p-4 mb-6">
+            <p className="text-sm text-warning-foreground leading-relaxed">
+              {APP_CONFIG.order.disclaimerText}
+            </p>
+          </div>
+        </main>
+
+        {/* Fixed Action Buttons */}
+        <div className="fixed bottom-0 left-0 right-0 bg-card border-t border-border p-4 z-50">
+          <div className="container max-w-[560px] mx-auto space-y-2">
+            <button
+              onClick={handleSubmitOrder}
+              disabled={submitMutation.isPending || !canSubmit}
+              className="w-full h-12 rounded-md bg-primary text-primary-foreground font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90 transition-opacity"
+            >
+              {submitMutation.isPending ? "Submitting..." : "Submit Order Request"}
+            </button>
+            <button
+              onClick={handleBackToOrder}
+              className="w-full h-10 rounded-md border border-border bg-card text-foreground font-medium text-sm hover:bg-accent transition-colors"
+            >
+              Back to Edit Order
+            </button>
+            {submitMutation.isError && (
+              <p className="text-xs text-destructive text-center mt-2">
+                Failed to submit. Please try again.
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   const { data: restaurant, isLoading, error } = useQuery({
     queryKey: ["restaurant", slug],
@@ -39,20 +180,78 @@ const OrderPage = () => {
       return data;
     },
     enabled: !!slug,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
   });
+
+  const { data: availabilityRows = [] } = useQuery({
+    queryKey: ["item-availability-client"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("item_availability")
+        .select("item_code,item_en,is_in_stock");
+      if (error) throw error;
+      return (data ?? []) as Array<{ item_code: string | null; item_en: string; is_in_stock: boolean }>;
+    },
+    staleTime: 15_000,
+    refetchOnWindowFocus: false,
+  });
+
+  const availabilityMap = useMemo(() => {
+    const map = new Map<string, boolean>();
+    availabilityRows.forEach((row) => {
+      if (row.item_code) map.set(row.item_code, row.is_in_stock);
+      map.set(row.item_en, row.is_in_stock);
+    });
+    return map;
+  }, [availabilityRows]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel("item-availability-live")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "item_availability" },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["item-availability-client"] });
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
 
   const selectedCount = useMemo(
     () => Object.values(quantities).filter((q) => q > 0).length,
     [quantities]
   );
 
-  const phoneValid = /^\d{10}$/.test(contactPhone);
-  const canSubmit = selectedCount > 0 && phoneValid && contactName.trim().length > 0;
+  useEffect(() => {
+    setQuantities((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      Object.keys(next).forEach((itemEn) => {
+        const inStock = availabilityMap.get(itemEn);
+        if (inStock === false && next[itemEn] > 0) {
+          next[itemEn] = 0;
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [availabilityMap]);
+
+  const canSubmit = selectedCount > 0;
 
   const updateQty = (itemEn: string, delta: number) => {
     setQuantities((prev) => {
       const current = prev[itemEn] || 0;
-      const next = Math.max(0, Math.round((current + delta) * 10) / 10);
+      const next = Math.max(
+        0,
+        Math.round((current + delta) * APP_CONFIG.order.quantityPrecision) / APP_CONFIG.order.quantityPrecision
+      );
       return { ...prev, [itemEn]: next };
     });
   };
@@ -62,50 +261,84 @@ const OrderPage = () => {
     if (isNaN(num) || num < 0) {
       setQuantities((prev) => ({ ...prev, [itemEn]: 0 }));
     } else {
-      setQuantities((prev) => ({ ...prev, [itemEn]: Math.round(num * 10) / 10 }));
+      setQuantities((prev) => ({
+        ...prev,
+        [itemEn]:
+          Math.round(num * APP_CONFIG.order.quantityPrecision) / APP_CONFIG.order.quantityPrecision,
+      }));
     }
   };
 
   const submitMutation = useMutation({
     mutationFn: async () => {
-      const ref = "ORD-" + Date.now().toString().slice(-6);
-      const items = CATALOG.filter((item) => (quantities[item.en] || 0) > 0).map((item) => ({
+      const submitTodayIso = getIndiaDateIso();
+      const submitTomorrowIso = shiftIsoDate(submitTodayIso, 1);
+      const items = CATALOG.filter((item) => (quantities[item.code] || 0) > 0).map((item) => ({
+        code: item.code,
         en: item.en,
         hi: item.hi,
-        qty: quantities[item.en],
+        qty: quantities[item.code],
         category: item.category,
       }));
 
-      const { error } = await supabase.from("orders").insert({
-        order_ref: ref,
-        restaurant_id: restaurant!.id,
-        restaurant_name: restaurant!.name,
-        restaurant_slug: restaurant!.slug,
-        contact_name: contactName.trim(),
-        contact_phone: contactPhone.trim(),
-        order_date: format(today, "yyyy-MM-dd"),
-        delivery_date: format(tomorrow, "yyyy-MM-dd"),
-        items,
-        notes: notes.trim() || null,
-        status: "pending",
-      });
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const ref = `${APP_CONFIG.order.orderRefPrefix}${submitTodayIso.replaceAll("-", "").slice(2)}-${Math.floor(
+          10000 + Math.random() * 90000,
+        )}`;
 
-      if (error) throw error;
-      return ref;
+        const { error } = await supabase.from("orders").insert({
+          order_ref: ref,
+          restaurant_id: restaurant!.id,
+          restaurant_name: restaurant!.name,
+          restaurant_slug: restaurant!.slug,
+          contact_name: contactName.trim(),
+          contact_phone: contactPhone.trim(),
+          order_date: submitTodayIso,
+          delivery_date: submitTomorrowIso,
+          items,
+          notes: notes.trim() || null,
+          status: APP_CONFIG.order.defaultStatus,
+        });
+
+        if (!error) {
+          return { ref, deliveryDate: submitTomorrowIso };
+        }
+
+        if (error.code !== "23505") {
+          throw error;
+        }
+      }
+
+      throw new Error("Could not generate a unique order reference. Please retry.");
     },
-    onSuccess: (ref) => {
+    onSuccess: ({ ref, deliveryDate }) => {
       setOrderRef(ref);
-      setSubmitted(true);
+      setSubmittedDeliveryDate(formatIsoDateDdMmYyyy(deliveryDate));
+      setOrderView("success");
     },
   });
+
+  const handleSubmitOrder = () => {
+    if (!canSubmit || submitMutation.isPending) return;
+    submitMutation.mutate();
+  };
+
+  const handleProceedToSummary = () => {
+    setOrderView("summary");
+  };
+
+  const handleBackToOrder = () => {
+    setOrderView("form");
+  };
 
   const handlePlaceAnother = () => {
     setQuantities({});
     setContactName("");
     setContactPhone("");
     setNotes("");
-    setSubmitted(false);
     setOrderRef("");
+    setSubmittedDeliveryDate("");
+    setOrderView("form");
   };
 
   // Invalid or missing slug
@@ -125,12 +358,16 @@ const OrderPage = () => {
     return <InvalidSlugScreen />;
   }
 
-  if (submitted) {
+  if (orderView === "summary") {
+    return <OrderSummary />;
+  }
+
+  if (orderView === "success") {
     return (
       <OrderSuccess
         orderRef={orderRef}
         restaurantName={restaurant.name}
-        deliveryDate={format(tomorrow, "dd/MM/yyyy")}
+        deliveryDate={submittedDeliveryDate || formatIsoDateDdMmYyyy(tomorrowIso)}
         itemCount={selectedCount}
         phone={contactPhone}
         onPlaceAnother={handlePlaceAnother}
@@ -138,7 +375,18 @@ const OrderPage = () => {
     );
   }
 
-  const categoryItems = CATALOG.filter((item) => item.category === activeTab);
+  const visibleCatalog = CATALOG.filter((item) => {
+    const isInStock = availabilityMap.get(item.code) ?? availabilityMap.get(item.en) ?? true;
+    if (APP_CONFIG.order.outOfStockDisplay === "hide") {
+      return isInStock;
+    }
+    return true;
+  });
+
+  const categoryItems =
+    activeTab === "all"
+      ? visibleCatalog
+      : visibleCatalog.filter((item) => item.category === activeTab);
 
   return (
     <div className="min-h-screen bg-background">
@@ -146,23 +394,14 @@ const OrderPage = () => {
       <header className="sticky top-0 z-50 bg-primary border-b border-border">
         <div className="container max-w-[560px] mx-auto px-4 py-3">
           <div className="flex items-center gap-2">
-            <span className="text-2xl">🥬</span>
+            <span className="text-2xl">{APP_CONFIG.brand.icon}</span>
             <div>
-              <h1 className="text-lg font-bold text-primary-foreground">FreshSupply</h1>
+              <h1 className="text-lg font-bold text-primary-foreground">{APP_CONFIG.brand.name}</h1>
               <p className="text-sm text-primary-foreground/80">{restaurant.name}</p>
             </div>
           </div>
         </div>
       </header>
-
-      {/* Warning Banner */}
-      <div className="bg-warning border-b border-warning-foreground/20">
-        <div className="container max-w-[560px] mx-auto px-4 py-2.5 text-center">
-          <p className="text-sm font-medium text-warning-foreground">
-            ⏰ Orders close at 11:00 PM · Next-day delivery only
-          </p>
-        </div>
-      </div>
 
       <main className="container max-w-[560px] mx-auto px-4 py-4 pb-32">
         {/* Order Details */}
@@ -171,19 +410,19 @@ const OrderPage = () => {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <p className="text-xs text-muted-foreground">Order Date</p>
-              <p className="text-sm font-medium">{format(today, "dd/MM/yyyy")}</p>
+              <p className="text-sm font-medium">{formatIsoDateDdMmYyyy(todayIso)}</p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Delivery Date</p>
               <p className="text-sm font-semibold text-accent-foreground bg-accent rounded-md px-2 py-1 inline-block">
-                {format(tomorrow, "dd/MM/yyyy")}
+                {formatIsoDateDdMmYyyy(tomorrowIso)}
               </p>
             </div>
           </div>
         </section>
 
         {/* Item Selection Badge */}
-        {selectedCount > 0 && (
+              {selectedCount > 0 && (
           <div className="mb-3 text-sm font-medium text-accent-foreground">
             🛒 {selectedCount} item{selectedCount > 1 ? "s" : ""} selected
           </div>
@@ -191,10 +430,25 @@ const OrderPage = () => {
 
         {/* Category Tabs */}
         <div className="flex gap-2 mb-4 overflow-x-auto">
+          <button
+            onClick={() => setActiveTab("all")}
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-md text-sm font-medium whitespace-nowrap border transition-colors ${
+              activeTab === "all"
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-card text-foreground border-border hover:bg-accent"
+            }`}
+          >
+            🧺 All
+            {selectedCount > 0 && (
+              <span className="ml-1 bg-secondary text-secondary-foreground text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                {selectedCount}
+              </span>
+            )}
+          </button>
           {(Object.keys(CATEGORY_LABELS) as ItemCategory[]).map((cat) => {
             const info = CATEGORY_LABELS[cat];
             const count = CATALOG.filter(
-              (i) => i.category === cat && (quantities[i.en] || 0) > 0
+              (i) => i.category === cat && (quantities[i.code] || 0) > 0
             ).length;
             return (
               <button
@@ -220,11 +474,12 @@ const OrderPage = () => {
         {/* Item List */}
         <div className="space-y-1.5 mb-6">
           {categoryItems.map((item) => {
-            const qty = quantities[item.en] || 0;
+            const qty = quantities[item.code] || 0;
             const isSelected = qty > 0;
+            const isInStock = availabilityMap.get(item.code) ?? availabilityMap.get(item.en) ?? true;
             return (
               <div
-                key={item.en}
+                key={item.code}
                 className={`flex items-center justify-between rounded-md border p-3 transition-colors ${
                   isSelected
                     ? "bg-accent border-secondary/40"
@@ -234,10 +489,14 @@ const OrderPage = () => {
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-foreground">{item.en}</p>
                   <p className="text-xs text-muted-foreground font-hindi">{item.hi}</p>
+                  {!isInStock && APP_CONFIG.order.outOfStockDisplay === "disable" && (
+                    <p className="text-[11px] text-destructive mt-0.5">Out of stock</p>
+                  )}
                 </div>
-                <div className="flex items-center gap-1.5 shrink-0">
+                <div className={`flex items-center gap-1.5 shrink-0 ${!isInStock ? "opacity-50" : ""}`}>
                   <button
-                    onClick={() => updateQty(item.en, -0.5)}
+                    onClick={() => updateQty(item.code, -APP_CONFIG.order.quantityDecreaseStepKg)}
+                    disabled={!isInStock}
                     className="w-8 h-8 rounded-md border border-border bg-card text-foreground flex items-center justify-center text-lg font-medium hover:bg-accent transition-colors"
                     aria-label={`Decrease ${item.en}`}
                   >
@@ -246,14 +505,16 @@ const OrderPage = () => {
                   <input
                     type="number"
                     value={qty || ""}
-                    onChange={(e) => setQty(item.en, e.target.value)}
+                    onChange={(e) => setQty(item.code, e.target.value)}
                     placeholder="0"
+                    disabled={!isInStock}
                     className="w-14 h-8 text-center text-sm font-medium rounded-md border border-border bg-card focus:outline-none focus:ring-1 focus:ring-ring"
                     min="0"
-                    step="0.5"
+                    step={APP_CONFIG.order.quantityInputStepKg}
                   />
                   <button
-                    onClick={() => updateQty(item.en, 0.5)}
+                    onClick={() => updateQty(item.code, APP_CONFIG.order.quantityIncreaseStepKg)}
+                    disabled={!isInStock}
                     className="w-8 h-8 rounded-md border border-border bg-card text-foreground flex items-center justify-center text-lg font-medium hover:bg-accent transition-colors"
                     aria-label={`Increase ${item.en}`}
                   >
@@ -271,7 +532,7 @@ const OrderPage = () => {
           <h2 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">Contact Details</h2>
           <div className="space-y-3">
             <div>
-              <label className="text-xs text-muted-foreground block mb-1">Your Name *</label>
+              <label className="text-xs text-muted-foreground block mb-1">Your Name</label>
               <input
                 type="text"
                 value={contactName}
@@ -281,7 +542,7 @@ const OrderPage = () => {
               />
             </div>
             <div>
-              <label className="text-xs text-muted-foreground block mb-1">Phone Number *</label>
+              <label className="text-xs text-muted-foreground block mb-1">Phone Number</label>
               <input
                 type="tel"
                 value={contactPhone}
@@ -289,9 +550,6 @@ const OrderPage = () => {
                 placeholder="10-digit mobile number"
                 className="w-full h-10 px-3 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-1 focus:ring-ring"
               />
-              {contactPhone.length > 0 && !phoneValid && (
-                <p className="text-xs text-destructive mt-1">Enter a valid 10-digit number</p>
-              )}
             </div>
           </div>
         </section>
@@ -301,18 +559,20 @@ const OrderPage = () => {
           <h2 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">Special Instructions</h2>
           <textarea
             value={notes}
-            onChange={(e) => setNotes(e.target.value.slice(0, 300))}
+            onChange={(e) => setNotes(e.target.value.slice(0, APP_CONFIG.order.maxNotesLength))}
             placeholder="Cut preference, quality notes, anything specific…"
             rows={3}
             className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring"
           />
-          <p className="text-xs text-muted-foreground text-right mt-1">{notes.length}/300</p>
+          <p className="text-xs text-muted-foreground text-right mt-1">
+            {notes.length}/{APP_CONFIG.order.maxNotesLength}
+          </p>
         </section>
 
         {/* Disclaimer */}
         <div className="bg-warning rounded-lg border border-warning-foreground/20 p-4 mb-6">
           <p className="text-sm text-warning-foreground leading-relaxed">
-            ⚠️ This is an order request, not a confirmed order. Final supply is subject to availability and same-day mandi rates. No payment is collected here. Our team will confirm by 7:00 AM.
+            {APP_CONFIG.order.disclaimerText}
           </p>
         </div>
       </main>
@@ -321,19 +581,12 @@ const OrderPage = () => {
       <div className="fixed bottom-0 left-0 right-0 bg-card border-t border-border p-4 z-50">
         <div className="container max-w-[560px] mx-auto">
           <button
-            onClick={() => submitMutation.mutate()}
-            disabled={!canSubmit || submitMutation.isPending}
+            onClick={handleProceedToSummary}
+            disabled={!canSubmit}
             className="w-full h-12 rounded-md bg-primary text-primary-foreground font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90 transition-opacity"
           >
-            {submitMutation.isPending
-              ? "Submitting..."
-              : `Submit Order Request (${selectedCount} item${selectedCount !== 1 ? "s" : ""})`}
+            Review Order ({selectedCount} item{selectedCount !== 1 ? "s" : ""})
           </button>
-          {submitMutation.isError && (
-            <p className="text-xs text-destructive text-center mt-2">
-              Failed to submit. Please try again.
-            </p>
-          )}
         </div>
       </div>
     </div>

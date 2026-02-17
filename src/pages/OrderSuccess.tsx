@@ -1,3 +1,5 @@
+import { APP_CONFIG } from "@/config/app";
+
 interface OrderSuccessProps {
   orderRef: string;
   restaurantName: string;
@@ -19,9 +21,9 @@ const OrderSuccess = ({
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="bg-card rounded-lg border border-border p-8 text-center max-w-sm w-full">
         <div className="text-5xl mb-4">📋</div>
-        <h1 className="text-2xl font-bold text-foreground mb-2">Order Received!</h1>
+        <h1 className="text-2xl font-bold text-foreground mb-2">{APP_CONFIG.order.successTitle}</h1>
         <p className="text-sm text-muted-foreground mb-6">
-          We will confirm availability and rates by 7:00 AM.
+          {APP_CONFIG.order.successDescription}
           <br />
           Watch for our call on <strong>{phone}</strong>.
         </p>
@@ -47,7 +49,7 @@ const OrderSuccess = ({
 
         <div className="bg-warning rounded-md p-3 mb-6">
           <p className="text-xs text-warning-foreground">
-            ⚠️ This is NOT a confirmed order. Subject to availability.
+            {APP_CONFIG.order.successWarningText}
           </p>
         </div>
 

@@ -1,10 +1,26 @@
 export type ItemCategory = "vegetables" | "herbs" | "fruits";
 
-export interface CatalogItem {
+type RawCatalogItem = {
   en: string;
   hi: string;
   category: ItemCategory;
+};
+
+export interface CatalogItem extends RawCatalogItem {
+  code: string;
 }
+
+const CATEGORY_CODE_PREFIX: Record<ItemCategory, string> = {
+  vegetables: "VEG",
+  herbs: "HRB",
+  fruits: "FRT",
+};
+
+const toItemCode = (category: ItemCategory, en: string) =>
+  `${CATEGORY_CODE_PREFIX[category]}_${en
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")}`;
 
 export const CATEGORY_LABELS: Record<ItemCategory, { label: string; icon: string }> = {
   vegetables: { label: "Vegetables", icon: "🥦" },
@@ -12,7 +28,7 @@ export const CATEGORY_LABELS: Record<ItemCategory, { label: string; icon: string
   fruits: { label: "Premium Fruits", icon: "🥝" },
 };
 
-export const CATALOG: CatalogItem[] = [
+const RAW_CATALOG: RawCatalogItem[] = [
   // Vegetables
   { en: "Tomato", hi: "टमाटर", category: "vegetables" },
   { en: "Lemon", hi: "निम्बू", category: "vegetables" },
@@ -68,3 +84,8 @@ export const CATALOG: CatalogItem[] = [
   { en: "Dragon Fruit", hi: "ड्रैगन फ्रूट", category: "fruits" },
   { en: "Blueberry", hi: "ब्लूबेरी", category: "fruits" },
 ];
+
+export const CATALOG: CatalogItem[] = RAW_CATALOG.map((item) => ({
+  ...item,
+  code: toItemCode(item.category, item.en),
+}));

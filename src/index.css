@@ -80,11 +80,49 @@
     @apply border-border;
   }
 
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
   body {
     @apply bg-background text-foreground font-sans;
+    overscroll-behavior-y: none;
   }
 }
 
 .font-hindi {
   font-family: 'Noto Sans Devanagari', sans-serif;
+}
+
+.app-dvh {
+  height: 100vh;
+}
+
+@supports (height: 100dvh) {
+  .app-dvh {
+    height: 100dvh;
+  }
+}
+
+.mobile-stable-scroll {
+  -webkit-overflow-scrolling: touch;
+  overflow-anchor: none;
+}
+
+.purchase-mobile-shell {
+  scroll-padding-bottom: 8rem;
+}
+
+.purchase-field-input {
+  scroll-margin-bottom: 8rem;
+}
+
+@media (max-width: 768px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
 }
