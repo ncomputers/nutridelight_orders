@@ -30,7 +30,6 @@ Required values in `.env`:
 - `VITE_SUPABASE_PUBLISHABLE_KEY`
 - `VITE_ADMIN_PASSWORD`
 - `VITE_ADMIN_POLL_INTERVAL_MS` (optional)
-- `VITE_ACCOUNTS_GO_LIVE_DATE` (optional, `YYYY-MM-DD`, accounting cutover date)
 
 3. Start dev server:
 
@@ -55,3 +54,7 @@ npm run dev
 ## App Config
 
 Non-secret app constants are centralized in `src/config/app.ts`.
+
+## Architecture Notes
+
+Project architecture conventions and feature layering are documented in `docs/architecture.md`.

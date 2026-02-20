@@ -9,6 +9,10 @@ import OrderPage from "./pages/OrderPage";
 const AdminLogin = lazy(() => import("./pages/AdminLogin"));
 const AdminPanel = lazy(() => import("./pages/AdminPanel"));
 const PurchaseLogin = lazy(() => import("./pages/PurchaseLogin"));
+const SalesListPage = lazy(() => import("./features/sales/pages/SalesListPage"));
+const CreateInvoicePage = lazy(() => import("./features/sales/pages/CreateInvoicePage"));
+const InvoiceViewPage = lazy(() => import("./features/sales/pages/InvoiceViewPage"));
+const InvoiceEditPage = lazy(() => import("./features/sales/pages/InvoiceEditPage"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient();
@@ -25,8 +29,12 @@ const App = () => (
             <Route path="/order" element={<OrderPage />} />
             <Route path="/admin/login" element={<AdminLogin />} />
             <Route path="/purchase/login" element={<PurchaseLogin />} />
-            <Route path="/purchase" element={<AdminPanel mode="purchase" />} />
-            <Route path="/admin" element={<AdminPanel mode="admin" />} />
+            <Route path="/purchase/*" element={<AdminPanel mode="purchase" />} />
+            <Route path="/admin/*" element={<AdminPanel mode="admin" />} />
+            <Route path="/sales" element={<SalesListPage />} />
+            <Route path="/sales/create" element={<CreateInvoicePage />} />
+            <Route path="/sales/:id" element={<InvoiceViewPage />} />
+            <Route path="/sales/:id/edit" element={<InvoiceEditPage />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>

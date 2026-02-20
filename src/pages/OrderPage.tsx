@@ -3,13 +3,21 @@ import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { CATALOG, CATEGORY_LABELS, type ItemCategory } from "@/data/items";
+import ItemIcon from "@/components/ItemIcon";
+import { hydrateCustomItemIcons } from "@/data/itemIcons";
 import OrderSuccess from "./OrderSuccess";
 import { APP_CONFIG } from "@/config/app";
 import { formatIsoDateDdMmYyyy, getIndiaDateIso, shiftIsoDate } from "@/lib/datetime";
-
-interface SelectedItems {
-  [key: string]: number; // key = item code, value = qty
-}
+import { orderRepository } from "@/features/order/repositories/orderRepository";
+import {
+  buildSelectedOrderItems,
+  makeOrderRef,
+  nextQuantity,
+  parseQuantityInput,
+  selectedCountFromQuantities,
+} from "@/features/order/domain/orderDomain";
+import { orderQueryKeys } from "@/features/order/queryKeys";
+import type { SelectedItems } from "@/features/order/types";
 
 type CategoryFilter = ItemCategory | "all";
 type OrderView = "form" | "summary" | "success";
@@ -82,7 +90,10 @@ const OrderPage = () => {
                 return (
                   <div key={item.code} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-foreground">{item.en}</p>
+                      <p className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+                        <ItemIcon itemEn={item.en} category={item.category} />
+                        <span>{item.en}</span>
+                      </p>
                       <p className="text-xs text-muted-foreground font-hindi">{item.hi}</p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
@@ -167,17 +178,10 @@ const OrderPage = () => {
   };
 
   const { data: restaurant, isLoading, error } = useQuery({
-    queryKey: ["restaurant", slug],
+    queryKey: orderQueryKeys.restaurant(slug),
     queryFn: async () => {
       if (!slug) return null;
-      const { data, error } = await supabase
-        .from("restaurants")
-        .select("*")
-        .eq("slug", slug)
-        .eq("is_active", true)
-        .maybeSingle();
-      if (error) throw error;
-      return data;
+      return orderRepository.getActiveRestaurantBySlug(slug);
     },
     enabled: !!slug,
     staleTime: 60_000,
@@ -185,14 +189,8 @@ const OrderPage = () => {
   });
 
   const { data: availabilityRows = [] } = useQuery({
-    queryKey: ["item-availability-client"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("item_availability")
-        .select("item_code,item_en,is_in_stock");
-      if (error) throw error;
-      return (data ?? []) as Array<{ item_code: string | null; item_en: string; is_in_stock: boolean }>;
-    },
+    queryKey: orderQueryKeys.itemAvailability(),
+    queryFn: () => orderRepository.listItemAvailability(),
     staleTime: 15_000,
     refetchOnWindowFocus: false,
   });
@@ -207,13 +205,17 @@ const OrderPage = () => {
   }, [availabilityRows]);
 
   useEffect(() => {
+    hydrateCustomItemIcons(availabilityRows);
+  }, [availabilityRows]);
+
+  useEffect(() => {
     const channel = supabase
       .channel("item-availability-live")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "item_availability" },
         () => {
-          queryClient.invalidateQueries({ queryKey: ["item-availability-client"] });
+          queryClient.invalidateQueries({ queryKey: orderQueryKeys.itemAvailability() });
         },
       )
       .subscribe();
@@ -223,10 +225,7 @@ const OrderPage = () => {
     };
   }, [queryClient]);
 
-  const selectedCount = useMemo(
-    () => Object.values(quantities).filter((q) => q > 0).length,
-    [quantities]
-  );
+  const selectedCount = useMemo(() => selectedCountFromQuantities(quantities), [quantities]);
 
   useEffect(() => {
     setQuantities((prev) => {
@@ -248,64 +247,39 @@ const OrderPage = () => {
   const updateQty = (itemEn: string, delta: number) => {
     setQuantities((prev) => {
       const current = prev[itemEn] || 0;
-      const next = Math.max(
-        0,
-        Math.round((current + delta) * APP_CONFIG.order.quantityPrecision) / APP_CONFIG.order.quantityPrecision
-      );
+      const next = nextQuantity(current, delta);
       return { ...prev, [itemEn]: next };
     });
   };
 
   const setQty = (itemEn: string, value: string) => {
-    const num = parseFloat(value);
-    if (isNaN(num) || num < 0) {
-      setQuantities((prev) => ({ ...prev, [itemEn]: 0 }));
-    } else {
-      setQuantities((prev) => ({
-        ...prev,
-        [itemEn]:
-          Math.round(num * APP_CONFIG.order.quantityPrecision) / APP_CONFIG.order.quantityPrecision,
-      }));
-    }
+    setQuantities((prev) => ({ ...prev, [itemEn]: parseQuantityInput(value) }));
   };
 
   const submitMutation = useMutation({
     mutationFn: async () => {
       const submitTodayIso = getIndiaDateIso();
       const submitTomorrowIso = shiftIsoDate(submitTodayIso, 1);
-      const items = CATALOG.filter((item) => (quantities[item.code] || 0) > 0).map((item) => ({
-        code: item.code,
-        en: item.en,
-        hi: item.hi,
-        qty: quantities[item.code],
-        category: item.category,
-      }));
+      const items = buildSelectedOrderItems(quantities);
 
       for (let attempt = 0; attempt < 5; attempt += 1) {
-        const ref = `${APP_CONFIG.order.orderRefPrefix}${submitTodayIso.replaceAll("-", "").slice(2)}-${Math.floor(
-          10000 + Math.random() * 90000,
-        )}`;
-
-        const { error } = await supabase.from("orders").insert({
-          order_ref: ref,
-          restaurant_id: restaurant!.id,
-          restaurant_name: restaurant!.name,
-          restaurant_slug: restaurant!.slug,
-          contact_name: contactName.trim(),
-          contact_phone: contactPhone.trim(),
-          order_date: submitTodayIso,
-          delivery_date: submitTomorrowIso,
-          items,
-          notes: notes.trim() || null,
-          status: APP_CONFIG.order.defaultStatus,
-        });
-
-        if (!error) {
+        const ref = makeOrderRef(submitTodayIso);
+        try {
+          await orderRepository.insertOrder({
+            orderRef: ref,
+            restaurant: restaurant!,
+            orderDateIso: submitTodayIso,
+            deliveryDateIso: submitTomorrowIso,
+            contactName,
+            contactPhone,
+            notes,
+            status: APP_CONFIG.order.defaultStatus,
+            items,
+          });
           return { ref, deliveryDate: submitTomorrowIso };
-        }
-
-        if (error.code !== "23505") {
-          throw error;
+        } catch (error: unknown) {
+          const pgError = error as { code?: string };
+          if (pgError.code !== "23505") throw error;
         }
       }
 
@@ -487,7 +461,10 @@ const OrderPage = () => {
                 }`}
               >
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-foreground">{item.en}</p>
+                  <p className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+                    <ItemIcon itemEn={item.en} category={item.category} />
+                    <span>{item.en}</span>
+                  </p>
                   <p className="text-xs text-muted-foreground font-hindi">{item.hi}</p>
                   {!isInStock && APP_CONFIG.order.outOfStockDisplay === "disable" && (
                     <p className="text-[11px] text-destructive mt-0.5">Out of stock</p>

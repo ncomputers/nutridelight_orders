@@ -20,9 +20,6 @@ export const APP_CONFIG = {
     sessionValue: "1",
     userKey: "fs_purchase_user",
   },
-  accounts: {
-    goLiveDate: import.meta.env.VITE_ACCOUNTS_GO_LIVE_DATE || "",
-  },
   order: {
     defaultStatus: "pending",
     quantityIncreaseStepKg: 1,
@@ -45,8 +42,10 @@ export const APP_CONFIG = {
 export const ORDER_STATUS = {
   pending: "pending",
   confirmed: "confirmed",
+  purchaseDone: "purchase_done",
   outForDelivery: "out_for_delivery",
   delivered: "delivered",
+  invoiced: "invoiced",
   failed: "failed",
   rejected: "rejected",
 } as const;

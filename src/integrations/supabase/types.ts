@@ -103,131 +103,28 @@ export type Database = {
         }
         Relationships: []
       }
-      account_ledgers: {
+      app_settings: {
         Row: {
-          account_type: string
-          code: string
-          created_at: string
-          id: string
-          is_active: boolean
-          is_system: boolean
-          ledger_group: string
-          name: string
+          key: string
           updated_at: string
+          value_json: Json
         }
         Insert: {
-          account_type: string
-          code: string
-          created_at?: string
-          id?: string
-          is_active?: boolean
-          is_system?: boolean
-          ledger_group: string
-          name: string
+          key: string
           updated_at?: string
+          value_json?: Json
         }
         Update: {
-          account_type?: string
-          code?: string
-          created_at?: string
-          id?: string
-          is_active?: boolean
-          is_system?: boolean
-          ledger_group?: string
-          name?: string
+          key?: string
           updated_at?: string
+          value_json?: Json
         }
         Relationships: []
-      }
-      purchase_user_ledger_map: {
-        Row: {
-          created_at: string
-          id: string
-          is_active: boolean
-          ledger_id: string
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          is_active?: boolean
-          ledger_id: string
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          is_active?: boolean
-          ledger_id?: string
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "purchase_user_ledger_map_ledger_id_fkey"
-            columns: ["ledger_id"]
-            isOneToOne: false
-            referencedRelation: "account_ledgers"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "purchase_user_ledger_map_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "app_users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      ledger_opening_balances: {
-        Row: {
-          created_at: string
-          created_by: string
-          id: string
-          ledger_id: string
-          note: string | null
-          opening_cr: number
-          opening_date: string
-          opening_dr: number
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          created_by?: string
-          id?: string
-          ledger_id: string
-          note?: string | null
-          opening_cr?: number
-          opening_date: string
-          opening_dr?: number
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          created_by?: string
-          id?: string
-          ledger_id?: string
-          note?: string | null
-          opening_cr?: number
-          opening_date?: string
-          opening_dr?: number
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "ledger_opening_balances_ledger_id_fkey"
-            columns: ["ledger_id"]
-            isOneToOne: false
-            referencedRelation: "account_ledgers"
-            referencedColumns: ["id"]
-          },
-        ]
       }
       item_availability: {
         Row: {
           id: string
+          icon_url: string | null
           is_in_stock: boolean
           item_code: string | null
           item_en: string
@@ -235,6 +132,7 @@ export type Database = {
         }
         Insert: {
           id?: string
+          icon_url?: string | null
           is_in_stock?: boolean
           item_code?: string | null
           item_en: string
@@ -242,12 +140,54 @@ export type Database = {
         }
         Update: {
           id?: string
+          icon_url?: string | null
           is_in_stock?: boolean
           item_code?: string | null
           item_en?: string
           updated_at?: string | null
         }
         Relationships: []
+      }
+      order_items: {
+        Row: {
+          created_at: string
+          id: string
+          item_code: string | null
+          item_en: string
+          item_hi: string | null
+          order_id: string
+          qty: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          item_code?: string | null
+          item_en: string
+          item_hi?: string | null
+          order_id: string
+          qty?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          item_code?: string | null
+          item_en?: string
+          item_hi?: string | null
+          order_id?: string
+          qty?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_items_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       purchase_plans: {
         Row: {
@@ -360,233 +300,237 @@ export type Database = {
         }
         Relationships: []
       }
-      daily_settlements: {
+      purchase_day_settings: {
         Row: {
-          cash_extra_used: number
-          cash_given_morning: number
-          cash_returned_evening: number
-          created_at: string
-          id: string
-          notes: string | null
-          settlement_date: string
-          updated_at: string
-          updated_by: string | null
-        }
-        Insert: {
-          cash_extra_used?: number
-          cash_given_morning?: number
-          cash_returned_evening?: number
-          created_at?: string
-          id?: string
-          notes?: string | null
-          settlement_date: string
-          updated_at?: string
-          updated_by?: string | null
-        }
-        Update: {
-          cash_extra_used?: number
-          cash_given_morning?: number
-          cash_returned_evening?: number
-          created_at?: string
-          id?: string
-          notes?: string | null
-          settlement_date?: string
-          updated_at?: string
-          updated_by?: string | null
-        }
-        Relationships: []
-      }
-      cash_transactions: {
-        Row: {
-          amount: number
-          created_at: string
-          created_by: string
-          id: string
-          note: string | null
-          person_name: string
-          txn_date: string
-          txn_type: string
-          updated_at: string
-        }
-        Insert: {
-          amount: number
-          created_at?: string
-          created_by: string
-          id?: string
-          note?: string | null
-          person_name: string
-          txn_date: string
-          txn_type: string
-          updated_at?: string
-        }
-        Update: {
-          amount?: number
-          created_at?: string
-          created_by?: string
-          id?: string
-          note?: string | null
-          person_name?: string
-          txn_date?: string
-          txn_type?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      accounts_day_closures: {
-        Row: {
-          close_note: string | null
-          closed_at: string | null
-          closed_by: string | null
-          closure_date: string
-          id: string
-          is_closed: boolean
+          is_locked: boolean
+          locked_at: string | null
+          need_mode: string
+          purchase_date: string
           reopened_at: string | null
-          reopened_by: string | null
           updated_at: string
         }
         Insert: {
-          close_note?: string | null
-          closed_at?: string | null
-          closed_by?: string | null
-          closure_date: string
-          id?: string
-          is_closed?: boolean
+          is_locked?: boolean
+          locked_at?: string | null
+          need_mode?: string
+          purchase_date: string
           reopened_at?: string | null
-          reopened_by?: string | null
           updated_at?: string
         }
         Update: {
-          close_note?: string | null
-          closed_at?: string | null
-          closed_by?: string | null
-          closure_date?: string
-          id?: string
-          is_closed?: boolean
+          is_locked?: boolean
+          locked_at?: string | null
+          need_mode?: string
+          purchase_date?: string
           reopened_at?: string | null
-          reopened_by?: string | null
           updated_at?: string
         }
         Relationships: []
       }
-      journal_vouchers: {
+      purchase_carry_forwards: {
         Row: {
-          actor_role: string | null
-          created_by_user_id: string | null
-          created_at: string
+          carry_date: string
           id: string
-          is_reversed: boolean
-          narration: string | null
-          posted_at: string
-          posted_by: string
-          reversal_of_voucher_id: string | null
-          reversed_at: string | null
-          reversed_by: string | null
-          source_id: string | null
-          source_type: string | null
+          item_code: string
+          item_en: string
+          qty_remaining: number
+          source_purchase_date: string
           updated_at: string
-          voucher_amount: number
-          voucher_date: string
-          voucher_no: string
-          voucher_type: string
         }
         Insert: {
-          actor_role?: string | null
-          created_by_user_id?: string | null
-          created_at?: string
+          carry_date: string
           id?: string
-          is_reversed?: boolean
-          narration?: string | null
-          posted_at?: string
-          posted_by: string
-          reversal_of_voucher_id?: string | null
-          reversed_at?: string | null
-          reversed_by?: string | null
-          source_id?: string | null
-          source_type?: string | null
+          item_code: string
+          item_en: string
+          qty_remaining: number
+          source_purchase_date: string
           updated_at?: string
-          voucher_amount?: number
-          voucher_date: string
-          voucher_no: string
-          voucher_type: string
         }
         Update: {
-          actor_role?: string | null
-          created_by_user_id?: string | null
+          carry_date?: string
+          id?: string
+          item_code?: string
+          item_en?: string
+          qty_remaining?: number
+          source_purchase_date?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      inventory_locations: {
+        Row: {
+          code: string
+          created_at: string
+          id: string
+          is_active: boolean
+          location_type: string
+          name: string
+        }
+        Insert: {
+          code: string
           created_at?: string
           id?: string
-          is_reversed?: boolean
-          narration?: string | null
-          posted_at?: string
-          posted_by?: string
-          reversal_of_voucher_id?: string | null
-          reversed_at?: string | null
-          reversed_by?: string | null
-          source_id?: string | null
-          source_type?: string | null
+          is_active?: boolean
+          location_type: string
+          name: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          location_type?: string
+          name?: string
+        }
+        Relationships: []
+      }
+      stock_balances: {
+        Row: {
+          id: string
+          item_code: string
+          item_en: string
+          location_id: string
+          qty: number
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          item_code: string
+          item_en: string
+          location_id: string
+          qty?: number
           updated_at?: string
-          voucher_amount?: number
-          voucher_date?: string
-          voucher_no?: string
-          voucher_type?: string
+        }
+        Update: {
+          id?: string
+          item_code?: string
+          item_en?: string
+          location_id?: string
+          qty?: number
+          updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "journal_vouchers_created_by_user_id_fkey"
-            columns: ["created_by_user_id"]
+            foreignKeyName: "stock_balances_location_id_fkey"
+            columns: ["location_id"]
             isOneToOne: false
-            referencedRelation: "app_users"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "journal_vouchers_reversal_of_voucher_id_fkey"
-            columns: ["reversal_of_voucher_id"]
-            isOneToOne: false
-            referencedRelation: "journal_vouchers"
+            referencedRelation: "inventory_locations"
             referencedColumns: ["id"]
           },
         ]
       }
-      journal_lines: {
+      local_store_inventory_policy: {
         Row: {
-          cr_amount: number
-          created_at: string
-          dr_amount: number
           id: string
-          ledger_id: string
-          line_note: string | null
-          voucher_id: string
+          is_active: boolean
+          item_code: string
+          item_en: string
+          min_qty: number
+          target_qty: number
+          updated_at: string
         }
         Insert: {
-          cr_amount?: number
-          created_at?: string
-          dr_amount?: number
           id?: string
-          ledger_id: string
-          line_note?: string | null
-          voucher_id: string
+          is_active?: boolean
+          item_code: string
+          item_en: string
+          min_qty?: number
+          target_qty?: number
+          updated_at?: string
         }
         Update: {
-          cr_amount?: number
-          created_at?: string
-          dr_amount?: number
           id?: string
-          ledger_id?: string
-          line_note?: string | null
-          voucher_id?: string
+          is_active?: boolean
+          item_code?: string
+          item_en?: string
+          min_qty?: number
+          target_qty?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      stock_transfers: {
+        Row: {
+          created_at: string
+          created_by: string
+          from_location_id: string
+          id: string
+          notes: string | null
+          status: string
+          to_location_id: string
+          transfer_date: string
+          transfer_no: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string
+          from_location_id: string
+          id?: string
+          notes?: string | null
+          status?: string
+          to_location_id: string
+          transfer_date?: string
+          transfer_no: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          from_location_id?: string
+          id?: string
+          notes?: string | null
+          status?: string
+          to_location_id?: string
+          transfer_date?: string
+          transfer_no?: string
         }
         Relationships: [
           {
-            foreignKeyName: "journal_lines_ledger_id_fkey"
-            columns: ["ledger_id"]
+            foreignKeyName: "stock_transfers_from_location_id_fkey"
+            columns: ["from_location_id"]
             isOneToOne: false
-            referencedRelation: "account_ledgers"
+            referencedRelation: "inventory_locations"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "journal_lines_voucher_id_fkey"
-            columns: ["voucher_id"]
+            foreignKeyName: "stock_transfers_to_location_id_fkey"
+            columns: ["to_location_id"]
             isOneToOne: false
-            referencedRelation: "journal_vouchers"
+            referencedRelation: "inventory_locations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stock_transfer_lines: {
+        Row: {
+          created_at: string
+          id: string
+          item_code: string
+          item_en: string
+          qty: number
+          transfer_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          item_code: string
+          item_en: string
+          qty: number
+          transfer_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          item_code?: string
+          item_en?: string
+          qty?: number
+          transfer_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_transfer_lines_transfer_id_fkey"
+            columns: ["transfer_id"]
+            isOneToOne: false
+            referencedRelation: "stock_transfers"
             referencedColumns: ["id"]
           },
         ]
@@ -604,7 +548,6 @@ export type Database = {
           invoice_date: string
           invoice_no: string
           notes: string | null
-          order_id: string
           other_charges: number
           paid_amount: number
           payment_status: string
@@ -627,7 +570,6 @@ export type Database = {
           invoice_date: string
           invoice_no: string
           notes?: string | null
-          order_id: string
           other_charges?: number
           paid_amount?: number
           payment_status?: string
@@ -650,7 +592,6 @@ export type Database = {
           invoice_date?: string
           invoice_no?: string
           notes?: string | null
-          order_id?: string
           other_charges?: number
           paid_amount?: number
           payment_status?: string
@@ -663,17 +604,46 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "sales_invoices_order_id_fkey"
-            columns: ["order_id"]
-            isOneToOne: false
-            referencedRelation: "orders"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "sales_invoices_restaurant_id_fkey"
             columns: ["restaurant_id"]
             isOneToOne: false
             referencedRelation: "restaurants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sales_invoice_orders: {
+        Row: {
+          created_at: string
+          id: string
+          invoice_id: string
+          order_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          invoice_id: string
+          order_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          invoice_id?: string
+          order_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sales_invoice_orders_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "sales_invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sales_invoice_orders_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
             referencedColumns: ["id"]
           },
         ]
@@ -724,6 +694,44 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "sales_invoice_lines_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "sales_invoices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sales_payments: {
+        Row: {
+          amount: number
+          created_at: string
+          id: string
+          invoice_id: string
+          method: string | null
+          notes: string | null
+          payment_date: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          id?: string
+          invoice_id: string
+          method?: string | null
+          notes?: string | null
+          payment_date?: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          id?: string
+          invoice_id?: string
+          method?: string | null
+          notes?: string | null
+          payment_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sales_payments_invoice_id_fkey"
             columns: ["invoice_id"]
             isOneToOne: false
             referencedRelation: "sales_invoices"
@@ -784,7 +792,127 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      add_payment: {
+        Args: {
+          p_amount: number
+          p_invoice_id: string
+          p_method: string
+          p_notes?: string
+          p_payment_date?: string
+        }
+        Returns: Json
+      }
+      create_invoice_from_order: {
+        Args: { p_order_id: string }
+        Returns: string
+      }
+      create_invoice_from_orders: {
+        Args: { p_order_ids: string[] }
+        Returns: string
+      }
+      finalize_invoice: {
+        Args: { p_actor?: string; p_invoice_id: string }
+        Returns: undefined
+      }
+      finalize_purchase: {
+        Args: { p_purchase_day_id: string }
+        Returns: Json
+      }
+      create_stock_transfer: {
+        Args: {
+          p_actor?: string
+          p_from_location_code: string
+          p_lines: Json
+          p_notes?: string
+          p_to_location_code: string
+        }
+        Returns: string
+      }
+      generate_carry_forward_for_day: {
+        Args: { p_purchase_date: string }
+        Returns: number
+      }
+      get_purchase_demand: {
+        Args: { p_need_mode?: string; p_purchase_date: string }
+        Returns: {
+          carry_forward_qty: number
+          gross_required_qty: number
+          item_code: string
+          item_en: string
+          local_policy_qty: number
+          main_available_qty: number
+          need_mode: string
+          required_qty: number
+          restaurant_qty: number
+        }[]
+      }
+      get_purchase_stock_details: {
+        Args: { p_purchase_date: string }
+        Returns: {
+          final_qty: number
+          item_code: string | null
+          item_en: string
+          item_hi: string | null
+          line_total: number
+          purchase_date: string
+          purchase_status: string
+          purchased_qty: number
+          unit_price: number
+          variance_qty: number
+          vendor_name: string | null
+        }[]
+      }
+      get_purchase_stock_history: {
+        Args: { p_from_date: string; p_to_date: string }
+        Returns: {
+          date: string
+          item_count: number
+          total_amount: number
+          total_purchased_qty: number
+          total_required_qty: number
+          total_variance_qty: number
+        }[]
+      }
+      post_order_dispatch_out: {
+        Args: { p_actor?: string; p_order_id: string }
+        Returns: Json
+      }
+      post_warehouse_transaction: {
+        Args: {
+          p_created_by?: string
+          p_item_code: string
+          p_item_en: string
+          p_notes?: string
+          p_qty: number
+          p_ref_id?: string
+          p_ref_type?: string
+          p_txn_date?: string
+          p_txn_type: string
+          p_unit_price?: number
+        }
+        Returns: Json
+      }
+      post_warehouse_transactions_bulk: {
+        Args: {
+          p_created_by?: string
+          p_lines: Json
+          p_notes?: string
+          p_ref_id?: string
+          p_ref_type?: string
+          p_txn_date?: string
+          p_txn_type: string
+          p_unit_price?: number
+        }
+        Returns: Json
+      }
+      upsert_purchase_day_setting: {
+        Args: { p_need_mode?: string; p_purchase_date: string }
+        Returns: undefined
+      }
+      update_invoice_totals: {
+        Args: { p_invoice_id: string }
+        Returns: Json
+      }
     }
     Enums: {
       [_ in never]: never
