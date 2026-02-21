@@ -11,7 +11,6 @@ interface PurchasePlanPageProps {
   totalRemainingQty: number;
   completedCount: number;
   onStartBuying: () => void;
-  onOpenNeedList: () => void;
 }
 
 const PurchasePlanPage = ({
@@ -21,7 +20,6 @@ const PurchasePlanPage = ({
   totalRemainingQty,
   completedCount,
   onStartBuying,
-  onOpenNeedList,
 }: PurchasePlanPageProps) => {
   const [filter, setFilter] = useState<"all" | "pending" | "completed">("pending");
   const withStatus = useMemo(
@@ -74,9 +72,6 @@ const PurchasePlanPage = ({
       <div className="flex flex-wrap gap-2">
         <Button type="button" onClick={onStartBuying}>
           Start Buying
-        </Button>
-        <Button type="button" variant="outline" onClick={onOpenNeedList}>
-          Open Need List
         </Button>
       </div>
       <div className="grid grid-cols-3 gap-2 text-xs">

@@ -2,14 +2,14 @@
 
 ## Overview
 
-This guide helps restaurant staff place daily produce orders through the Nutridelight Orders web application.
+This guide helps restaurant staff place daily produce orders through the Nutridelight Orders web application and manage their account through the restaurant portal.
 
 ## Getting Started
 
 ### Access Requirements
 - Web browser (Chrome, Firefox, Safari, Edge)
 - Restaurant-specific order URL (provided by Nutridelight)
-- No login required for ordering
+- Restaurant portal credentials (for account management)
 
 ### Order URL Format
 ```
@@ -18,17 +18,26 @@ https://app.nutridelight.com/order?r=[restaurant-slug]
 
 Your restaurant slug will be provided by the Nutridelight team.
 
+### Restaurant Portal Access
+```
+https://app.nutridelight.com/portal
+```
+
+Use your restaurant username and PIN to access the portal.
+
 ## Ordering Process
 
 ### Step 1: Open Order Page
 1. Navigate to your restaurant's order URL
 2. The page will display available produce items
 3. Items are organized by categories: Vegetables, Herbs & Greens, Premium Fruits
+4. **NEW**: View item icons for visual identification
 
 ### Step 2: Select Items
 1. Browse items by category
 2. Each item shows:
    - English and Hindi names
+   - **NEW**: Visual icon for easy identification
    - Current availability status
    - Quantity input field
 3. Enter desired quantities in kilograms (kg)
@@ -45,6 +54,43 @@ Your restaurant slug will be provided by the Nutridelight team.
 2. Confirm order details in the popup
 3. Receive order confirmation with reference number
 4. Save the order reference for tracking
+
+## Restaurant Portal Features
+
+### Portal Login
+1. Go to the portal URL
+2. Enter your restaurant username and PIN
+3. Click "Login" to access your dashboard
+
+### Dashboard Overview
+The portal dashboard provides:
+- **Recent Orders**: View your latest 5 orders
+- **Order Statistics**: Total orders, pending orders, delivered orders
+- **Quick Actions**: Place new order, view all orders, create support request
+
+### Order History
+1. Click "View All Orders" from dashboard
+2. Filter orders by status (pending, confirmed, delivered, etc.)
+3. Search for specific orders by reference number
+4. View detailed order information including:
+   - Order items and quantities
+   - Order status and timeline
+   - Delivery information
+   - Invoice details (if available)
+
+### Account Management
+Update your restaurant information:
+- **Contact Details**: Update phone numbers and contact persons
+- **Delivery Address**: Modify delivery location
+- **Operating Hours**: Set restaurant hours for delivery scheduling
+
+### Support Requests
+Create and track support issues:
+1. Click "Create Support Request"
+2. Select issue type (order, billing, technical, other)
+3. Provide detailed description
+4. Set priority level (low, medium, high, urgent)
+5. Track request status and resolution
 
 ## Order Features
 

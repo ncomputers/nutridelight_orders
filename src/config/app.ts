@@ -20,6 +20,11 @@ export const APP_CONFIG = {
     sessionValue: "1",
     userKey: "fs_purchase_user",
   },
+  restaurantPortal: {
+    sessionTokenKey: "fs_restaurant_portal_token",
+    sessionMetaKey: "fs_restaurant_portal_meta",
+    sessionDays: 30,
+  },
   order: {
     defaultStatus: "pending",
     quantityIncreaseStepKg: 1,

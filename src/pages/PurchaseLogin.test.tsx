@@ -4,7 +4,7 @@ import { APP_CONFIG } from "@/config/app";
 import PurchaseLogin from "./PurchaseLogin";
 
 const mockNavigate = vi.fn();
-const mockQueryResult = vi.fn();
+const mockRpcResult = vi.fn();
 
 vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
@@ -15,16 +15,9 @@ vi.mock("react-router-dom", async () => {
 });
 
 vi.mock("@/integrations/supabase/client", () => {
-  const chain = {
-    select: vi.fn(() => chain),
-    ilike: vi.fn(() => chain),
-    in: vi.fn(() => chain),
-    eq: vi.fn(() => chain),
-    limit: vi.fn(async () => mockQueryResult()),
-  };
   return {
     supabase: {
-      from: vi.fn(() => chain),
+      rpc: vi.fn(async () => mockRpcResult()),
     },
   };
 });
@@ -33,13 +26,13 @@ describe("PurchaseLogin", () => {
   beforeEach(() => {
     sessionStorage.clear();
     mockNavigate.mockClear();
-    mockQueryResult.mockReset();
+    mockRpcResult.mockReset();
   });
 
   it("redirects purchase user to purchase page", async () => {
-    mockQueryResult.mockReturnValue({
+    mockRpcResult.mockReturnValue({
       data: [
-        { id: "u1", name: "Buyer", username: "buyer", password: "pass", role: "purchase", is_active: true },
+        { id: "u1", name: "Buyer", username: "buyer", role: "purchase", is_active: true },
       ],
       error: null,
     });
@@ -59,9 +52,9 @@ describe("PurchaseLogin", () => {
   });
 
   it("redirects sales user to sales view", async () => {
-    mockQueryResult.mockReturnValue({
+    mockRpcResult.mockReturnValue({
       data: [
-        { id: "u2", name: "Sales", username: "sales", password: "pass", role: "sales", is_active: true },
+        { id: "u2", name: "Sales", username: "sales", role: "sales", is_active: true },
       ],
       error: null,
     });

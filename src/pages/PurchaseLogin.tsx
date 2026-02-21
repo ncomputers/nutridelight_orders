@@ -22,20 +22,21 @@ const PurchaseLogin = () => {
     }
 
     setIsLoading(true);
-    const { data, error: queryError } = await supabase
-      .from("app_users")
-      .select("id,name,username,password,role,is_active")
-      .ilike("username", cleanUsername)
-      .in("role", ["purchase", "sales"])
-      .eq("is_active", true)
-      .limit(10);
+    const rpcClient = supabase as unknown as {
+      rpc: (fn: string, params?: Record<string, unknown>) => Promise<{ data: Array<{ id: string; name: string; username: string; role: string; is_active: boolean }> | null; error: { message?: string } | null }>;
+    };
+    const { data, error: queryError } = await rpcClient.rpc("app_user_login", {
+      p_username: cleanUsername,
+      p_password: password,
+      p_allowed_roles: ["purchase", "sales"],
+    });
     setIsLoading(false);
 
     if (queryError || !data || data.length === 0) {
       setError("Invalid credentials.");
       return;
     }
-    const matchedUser = data.find((row) => row.password === password);
+    const matchedUser = data[0];
     if (!matchedUser) {
       setError("Invalid credentials.");
       return;

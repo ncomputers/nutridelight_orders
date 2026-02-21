@@ -45,9 +45,353 @@ supabase db reset
 - **Admin Panel**: `http://localhost:5173/admin`
 - **Purchase Panel**: `http://localhost:5173/purchase`
 - **Sales Panel**: `http://localhost:5173/sales`
+- **Restaurant Portal**: `http://localhost:5173/portal`
 
 ### Production
 - **Main App**: `https://app.nutridelight.com`
+- **Restaurant Portal**: `https://app.nutridelight.com/portal`
+
+## Environment Variables
+
+```bash
+# Supabase Configuration
+VITE_SUPABASE_URL=your-supabase-project-url
+VITE_SUPABASE_PUBLISHABLE_KEY=your-supabase-anon-key
+
+# Admin Configuration
+VITE_ADMIN_PASSWORD=your-admin-password
+VITE_ADMIN_POLL_INTERVAL_MS=30000
+```
+
+## Enhanced Features
+
+### Restaurant Portal
+```typescript
+// Portal login
+const { data } = await supabase.rpc('restaurant_portal_login', {
+  p_username: 'hotel_hilltop',
+  p_pin: '1234'
+});
+
+// Get dashboard data
+const { data } = await supabase.rpc('restaurant_portal_dashboard', {
+  p_session_token: sessionToken
+});
+```
+
+### Item Icon Management
+```typescript
+// Upload item icon
+const compressImage = async (file: File): Promise<File> => {
+  return new Promise((resolve) => {
+    // Image compression logic
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    // ... compression implementation
+  });
+};
+```
+
+### Stock Transfers
+```typescript
+// Create stock transfer
+const { data } = await supabase.rpc('create_stock_transfer', {
+  p_from_location_code: 'CENTRAL',
+  p_to_location_code: 'STORE_01',
+  p_lines: JSON.stringify([
+    { item_code: 'TOMATO', qty: 50, notes: 'Fresh stock' }
+  ])
+});
+```
+
+## Order Status Flow
+
+```
+pending → confirmed → purchase_done → out_for_delivery → delivered → invoiced
+    ↓           ↓            ↓              ↓           ↓
+  rejected   failed      cancelled     returned    cancelled
+```
+
+## Invoice Status Flow
+
+```
+draft → finalized → paid
+   ↓         ↓        ↓
+cancelled  cancelled  (completed)
+```
+
+## Common React Query Patterns
+
+### Fetching Data
+```typescript
+const { data, error, isLoading } = useQuery({
+  queryKey: ['orders', status],
+  queryFn: () => getOrders({ status })
+});
+```
+
+### Mutating Data
+```typescript
+const mutation = useMutation({
+  mutationFn: updateOrder,
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['orders'] });
+  }
+});
+```
+
+### RPC Functions
+```typescript
+const { data } = useQuery({
+  queryKey: ['purchase-demand', date],
+  queryFn: () => supabase.rpc('get_purchase_demand', {
+    p_purchase_date: date,
+    p_need_mode: 'net'
+  })
+});
+```
+
+## Repository Patterns
+
+### Order Repository
+```typescript
+export const orderRepository = {
+  getAll: (filters) => supabase.rpc('get_orders_with_restaurants', filters),
+  create: (order) => supabase.from('orders').insert(order),
+  update: (id, updates) => supabase.from('orders').update(updates).eq('id', id),
+  delete: (id) => supabase.from('orders').delete().eq('id', id)
+};
+```
+
+## Component Patterns
+
+### Feature Component Structure
+```typescript
+// features/order/components/OrderForm.tsx
+export const OrderForm = () => {
+  const [items, setItems] = useState<OrderItem[]>([]);
+  const createOrder = useCreateOrderMutation();
+  
+  return (
+    <form onSubmit={handleSubmit}>
+      {/* Form content */}
+    </form>
+  );
+};
+```
+
+### Layout Component
+```typescript
+// layouts/MainLayout.tsx
+export const MainLayout = ({ children }) => {
+  return (
+    <div className="min-h-screen bg-background">
+      <Sidebar />
+      <TopTabs />
+      <main>{children}</main>
+    </div>
+  );
+};
+```
+
+## Business Logic
+
+### Order Calculations
+```typescript
+export const calculateOrderTotal = (items: OrderItem[]) => {
+  return items.reduce((total, item) => {
+    return total + (item.qty * item.unit_price);
+  }, 0);
+};
+```
+
+### Invoice Calculations
+```typescript
+export const computeSalesTotals = (
+  lines: SalesInvoiceLine[],
+  discountAmount: number,
+  otherCharges: number
+) => {
+  const subtotal = lines.reduce((sum, line) => sum + line.line_total, 0);
+  const grand = Math.max(0, subtotal - discountAmount + otherCharges);
+  return { subtotal, discount: discountAmount, other: otherCharges, grand };
+};
+```
+
+## Database Queries
+
+### Common Select Patterns
+```sql
+-- Get orders with restaurant details
+SELECT o.*, r.name as restaurant_name
+FROM orders o
+JOIN restaurants r ON o.restaurant_id = r.id
+WHERE o.status = 'pending';
+
+-- Calculate purchase demand
+SELECT 
+  item_code,
+  SUM(final_qty) as total_demand
+FROM purchase_plans 
+WHERE purchase_date = CURRENT_DATE
+GROUP BY item_code;
+```
+
+### RPC Function Examples
+```sql
+-- Create invoice from order
+SELECT create_invoice_from_order('order-uuid');
+
+-- Get purchase demand
+SELECT * FROM get_purchase_demand('2024-02-20', 'net');
+
+-- Restaurant portal login
+SELECT * FROM restaurant_portal_login('username', 'pin');
+```
+
+## Error Handling
+
+### React Query Error Handling
+```typescript
+const { error } = useQuery({
+  queryKey: ['orders'],
+  queryFn: getOrders,
+  retry: (failureCount, error) => {
+    if (error.status === 404) return false;
+    return failureCount < 3;
+  }
+});
+```
+
+### Form Validation
+```typescript
+const validation = z.object({
+  restaurant_name: z.string().min(1),
+  items: z.array(z.object({
+    code: z.string(),
+    qty: z.number().min(0)
+  }))
+});
+```
+
+## UI Patterns
+
+### Loading States
+```typescript
+if (isLoading) return <LoadingSpinner />;
+if (error) return <ErrorMessage error={error} />;
+if (!data) return <EmptyState />;
+```
+
+### Responsive Design
+```tsx
+<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+  {/* Card content */}
+</div>
+```
+
+## Testing Patterns
+
+### Unit Tests
+```typescript
+test('should calculate order total correctly', () => {
+  const items = [
+    { code: 'TOMATO', qty: 10, unit_price: 50 },
+    { code: 'ONION', qty: 5, unit_price: 30 }
+  ];
+  expect(calculateOrderTotal(items)).toBe(650);
+});
+```
+
+### Integration Tests
+```typescript
+test('should create order successfully', async () => {
+  const result = await createOrder(mockOrderData);
+  expect(result).toBeDefined();
+  expect(result.status).toBe('pending');
+});
+```
+
+## Debugging Tips
+
+### Console Logging
+```typescript
+console.log('Order data:', order);
+console.table(items);
+console.group('API Response');
+console.log(data);
+console.groupEnd();
+```
+
+### React DevTools
+- Use React DevTools to inspect component state
+- Check React Query DevTools for cache status
+- Use browser network tab for API debugging
+
+## Performance Tips
+
+### React Query Optimization
+```typescript
+// Enable stale time for better UX
+useQuery({
+  queryKey: ['orders'],
+  queryFn: getOrders,
+  staleTime: 5 * 60 * 1000, // 5 minutes
+});
+```
+
+### Image Optimization
+```typescript
+// Compress images before upload
+const optimizedImage = await compressImage(file);
+```
+
+## Security Tips
+
+### Environment Variables
+- Never commit `.env` files
+- Use different keys for development/production
+- Rotate keys regularly
+
+### Data Validation
+```typescript
+// Validate user inputs
+const validatedData = orderSchema.parse(rawData);
+```
+
+## Deployment Steps
+
+### Production Build
+```bash
+# Build application
+npm run build
+
+# Deploy to hosting
+npm run deploy
+
+# Run database migrations
+supabase db push --linked
+```
+
+## Troubleshooting
+
+### Common Issues
+- **Build fails**: Check TypeScript errors
+- **API errors**: Verify Supabase connection
+- **Auth issues**: Check environment variables
+- **Slow queries**: Add database indexes
+
+### Debug Commands
+```bash
+# Check types
+npm run type-check
+
+# Check linting
+npm run lint
+
+# Run tests
+npm test
+```
 - **Admin**: `https://app.nutridelight.com/admin`
 - **Order Page**: `https://app.nutridelight.com/order?r=[restaurant-slug]`
 

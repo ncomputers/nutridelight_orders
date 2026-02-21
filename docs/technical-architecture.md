@@ -50,17 +50,34 @@ Nutridelight Orders is a modern web application built with a clean, layered arch
 ```
 src/
 ├── components/          # Reusable UI components
+│   ├── ItemIcon.tsx    # Item icon display
+│   ├── ItemIconUploader.tsx # Icon upload component
+│   ├── Sidebar.tsx     # Navigation sidebar
+│   ├── TopTabs.tsx     # Top navigation tabs
+│   └── ui/             # shadcn/ui components
 ├── pages/              # Route-level components
 ├── features/           # Feature-based modules
 │   ├── order/         # Customer ordering
 │   ├── sales/         # Invoicing and sales
 │   ├── admin/         # Admin operations
-│   └── purchase/      # Purchase planning
+│   ├── purchase/      # Purchase planning
+│   └── restaurantPortal/ # Restaurant self-service
+├── layouts/            # Layout components
+│   ├── MainLayout.tsx # Main application layout
+│   └── ModuleLayout.tsx # Feature-specific layout
 ├── lib/               # Utility functions
+│   ├── datetime.ts    # Date/time utilities
+│   ├── imageCompression.ts # Image processing
+│   └── navigation.ts  # Navigation utilities
 ├── hooks/             # Custom React hooks
 ├── config/            # Application configuration
+│   ├── app.ts         # App configuration
+│   └── navigation.ts  # Navigation config
 ├── data/              # Static data and catalogs
+│   ├── items.ts       # Product catalog
+│   └── itemIcons.ts  # Item icon mappings
 ├── integrations/      # External service integrations
+│   └── supabase/      # Supabase client setup
 └── test/              # Test utilities and setup
 ```
 
@@ -115,16 +132,25 @@ features/[feature]/
 - `restaurants` - Customer information
 - `orders` - Customer orders
 - `order_items` - Order line items
-- `item_availability` - Stock management
-- `sales_invoices` - Customer billing
+- `item_availability` - Stock management with icons
+- `sales_invoices` - Customer billing (multi-order support)
 - `purchase_plans` - Purchase planning
 - `app_users` - System users
+- `local_stores` - Local store management
+- `stock_transfers` - Stock transfer tracking
+- `warehouse_config` - Warehouse configuration
+- `restaurant_portal_settings` - Restaurant portal config
+- `purchase_stock_history` - Stock history tracking
+- `audit_status_transitions` - Status change audit
 
 ### Relationships
 - Restaurants → Orders (1:N)
 - Orders → Order Items (1:N)
-- Orders → Sales Invoices (1:N)
+- Orders → Sales Invoices (1:1, but invoices can span multiple orders)
 - Items → Item Availability (1:1)
+- Local Stores → Stock Transfers (1:N)
+- Restaurants → Restaurant Portal Settings (1:1)
+- Purchase Plans → Purchase Stock History (1:N)
 
 ## Security Architecture
 
@@ -223,6 +249,44 @@ features/[feature]/
 - Efficient React rendering
 - Optimized database queries
 - Memory management
+
+## Enhanced Modules and Features
+
+### Restaurant Portal Module
+- **Self-service ordering** for restaurants
+- **Order history** and tracking
+- **Account management** and settings
+- **Direct QR code access** without admin intervention
+
+### Item Icon Management
+- **Visual product catalog** with custom icons
+- **Image upload and compression** optimization
+- **Icon mapping** to product catalog
+- **Responsive icon display** across all interfaces
+
+### Local Store and Transfer System
+- **Multi-location inventory** management
+- **Stock transfer tracking** between locations
+- **Central warehouse mode** support
+- **Transfer audit trail** and approval workflows
+
+### Advanced Purchase Planning
+- **Demand aggregation** from multiple sources
+- **Stock history tracking** and forecasting
+- **Supplier management** integration
+- **Purchase optimization** algorithms
+
+### Multi-Order Invoicing
+- **Consolidated billing** for multiple orders
+- **Flexible invoice generation** options
+- **Advanced payment tracking**
+- **Revenue recognition** automation
+
+### Audit and Compliance
+- **Status transition audit** logging
+- **User action tracking**
+- **Compliance reporting**
+- **Data integrity** validation
 
 ## Future Architecture Enhancements
 

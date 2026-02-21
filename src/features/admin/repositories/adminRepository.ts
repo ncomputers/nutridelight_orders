@@ -5,13 +5,15 @@ import type {
   ItemAvailability,
   LocalStorePolicyRow,
   Order,
-  PurchaseDaySettingRow,
+  PagedResult,
   PurchaseDemandRow,
   PurchaseDayLockRow,
   PurchasePlanDbRow,
   PurchaseStockHistoryRow,
   Restaurant,
   StockQtyRow,
+  SupportIssueRow,
+  WarehouseTransactionRow,
 } from "@/features/admin/types";
 
 export const adminRepository = {
@@ -31,7 +33,8 @@ export const adminRepository = {
     const { data, error } = await supabase
       .from("restaurants")
       .select("id,name,slug,is_active")
-      .order("name", { ascending: true });
+      .order("name", { ascending: true })
+      .limit(1000);
     if (error) throw error;
     return (data ?? []) as Restaurant[];
   },
@@ -39,7 +42,7 @@ export const adminRepository = {
   async listAppUsers() {
     const { data, error } = await supabase
       .from("app_users")
-      .select("id,name,username,password,role,is_active")
+      .select("id,name,username,role,is_active")
       .order("created_at", { ascending: false })
       .limit(300);
     if (error) throw error;
@@ -49,7 +52,8 @@ export const adminRepository = {
   async listItemAvailability() {
     const { data, error } = await supabase
       .from("item_availability")
-      .select("item_code,item_en,is_in_stock,icon_url");
+      .select("item_code,item_en,is_in_stock,icon_url")
+      .limit(1000);
     if (error) throw error;
     return (data ?? []) as ItemAvailability[];
   },
@@ -60,7 +64,8 @@ export const adminRepository = {
       .select(
         "item_code,item_en,item_hi,category,ordered_qty,adjustment_qty,final_qty,purchased_qty,pack_size,pack_count,unit_price,line_total,variance_qty,vendor_name,purchase_status,finalized_at,finalized_by,notes,source_orders",
       )
-      .eq("purchase_date", dateIso);
+      .eq("purchase_date", dateIso)
+      .limit(1000);
     if (error) throw error;
     return (data ?? []) as unknown as PurchasePlanDbRow[];
   },
@@ -72,6 +77,34 @@ export const adminRepository = {
       .limit(2000);
     if (error) throw error;
     return (data ?? []) as StockQtyRow[];
+  },
+
+  async listWarehouseTransactions(
+    fromDate: string,
+    toDate: string,
+    page = 1,
+    pageSize = 200,
+  ): Promise<PagedResult<WarehouseTransactionRow>> {
+    const safePageSize = Math.max(1, Math.min(pageSize, 500));
+    const safePage = Math.max(1, page);
+    const from = (safePage - 1) * safePageSize;
+    const to = from + safePageSize - 1;
+    const { data, error } = await supabase
+      .from("warehouse_transactions")
+      .select("id,txn_date,txn_type,item_code,item_en,qty,signed_qty,unit_price,amount,ref_type,ref_id,notes,created_by,created_at")
+      .gte("txn_date", fromDate)
+      .lte("txn_date", toDate)
+      .order("txn_date", { ascending: false })
+      .order("created_at", { ascending: false })
+      .range(from, to);
+    if (error) throw error;
+    const rows = (data ?? []) as unknown as WarehouseTransactionRow[];
+    return {
+      rows,
+      page: safePage,
+      pageSize: safePageSize,
+      hasMore: rows.length === safePageSize,
+    };
   },
 
   async getPurchaseDayLock(dateIso: string) {
@@ -306,8 +339,9 @@ export const adminRepository = {
   async listLocalStorePolicies() {
     const { data, error } = await supabase
       .from("local_store_inventory_policy")
-      .select("id,item_code,item_en,min_qty,target_qty,is_active,updated_at")
-      .order("item_en", { ascending: true });
+      .select("id,item_code,item_en,required_stock_qty,is_active,updated_at")
+      .order("item_en", { ascending: true })
+      .limit(1000);
     if (error) throw error;
     return (data ?? []) as unknown as LocalStorePolicyRow[];
   },
@@ -315,8 +349,7 @@ export const adminRepository = {
   async upsertLocalStorePolicy(payload: {
     item_code: string;
     item_en: string;
-    min_qty: number;
-    target_qty: number;
+    required_stock_qty: number;
     is_active?: boolean;
   }) {
     const { error } = await supabase
@@ -336,28 +369,10 @@ export const adminRepository = {
     if (error) throw error;
   },
 
-  async getPurchaseDaySetting(dateIso: string) {
-    const { data, error } = await supabase
-      .from("purchase_day_settings")
-      .select("purchase_date,need_mode")
-      .eq("purchase_date", dateIso)
-      .limit(1);
-    if (error) throw error;
-    return ((data ?? [])[0] ?? null) as PurchaseDaySettingRow | null;
-  },
-
-  async upsertPurchaseDaySetting(dateIso: string, needMode: "net" | "gross") {
-    const { error } = await supabase.rpc("upsert_purchase_day_setting", {
-      p_purchase_date: dateIso,
-      p_need_mode: needMode,
-    });
-    if (error) throw error;
-  },
-
-  async getPurchaseDemand(dateIso: string, needMode: "net" | "gross") {
+  async getPurchaseDemand(dateIso: string) {
     const { data, error } = await supabase.rpc("get_purchase_demand", {
       p_purchase_date: dateIso,
-      p_need_mode: needMode,
+      p_need_mode: "net",
     });
     if (error) throw error;
     return (data ?? []) as unknown as PurchaseDemandRow[];
@@ -370,5 +385,59 @@ export const adminRepository = {
     });
     if (error) throw error;
     return data as { order_id: string; status: string; already_posted: boolean };
+  },
+
+  async setRestaurantPortalPin(payload: { restaurantId: string; username: string; pin: string; actor?: string }) {
+    const rpcClient = supabase as unknown as {
+      rpc: (fn: string, params?: Record<string, unknown>) => Promise<{ data: unknown; error: { message?: string } | null }>;
+    };
+    const { data, error } = await rpcClient.rpc("admin_set_restaurant_portal_pin", {
+      p_restaurant_id: payload.restaurantId,
+      p_username: payload.username,
+      p_pin: payload.pin,
+      p_actor: payload.actor || "admin",
+    });
+    if (error) throw new Error(error.message || "Could not set restaurant portal PIN.");
+    return data;
+  },
+
+  async listSupportIssues(page = 1, pageSize = 50): Promise<PagedResult<SupportIssueRow>> {
+    const safePageSize = Math.max(1, Math.min(pageSize, 200));
+    const safePage = Math.max(1, page);
+    const offset = (safePage - 1) * safePageSize;
+    const rpcClient = supabase as unknown as {
+      rpc: (fn: string, params?: Record<string, unknown>) => Promise<{ data: unknown[] | null; error: { message?: string } | null }>;
+    };
+    const { data, error } = await rpcClient.rpc("admin_list_support_issues", {
+      p_limit: safePageSize,
+      p_offset: offset,
+    });
+    if (error) throw new Error(error.message || "Could not load support issues.");
+    const rows = (data ?? []) as SupportIssueRow[];
+    return {
+      rows,
+      page: safePage,
+      pageSize: safePageSize,
+      hasMore: rows.length === safePageSize,
+    };
+  },
+
+  async updateSupportIssue(payload: {
+    issueId: string;
+    status: "open" | "in_review" | "resolved";
+    resolutionNote?: string;
+    actor?: string;
+  }) {
+    const rpcClient = supabase as unknown as {
+      rpc: (fn: string, params?: Record<string, unknown>) => Promise<{ data: unknown; error: { message?: string } | null }>;
+    };
+    const { data, error } = await rpcClient.rpc("admin_update_support_issue", {
+      p_issue_id: payload.issueId,
+      p_status: payload.status,
+      p_resolution_note: payload.resolutionNote || null,
+      p_actor: payload.actor || "admin",
+    });
+    if (error) throw new Error(error.message || "Could not update support issue.");
+    return data;
   },
 };

@@ -8,6 +8,8 @@ import TopTabs from "@/components/TopTabs";
 import Sidebar from "@/components/Sidebar";
 import { CATALOG } from "@/data/items";
 import ItemIcon from "@/components/ItemIcon";
+import ItemIconUploader from "@/components/ItemIconUploader";
+import { hydrateCustomItemIcons } from "@/data/itemIcons";
 import {
   formatIndiaDate,
   formatIndiaTime,
@@ -18,12 +20,14 @@ import {
 import {
   buildPrintableDoc,
   buildPrintableOrderSection,
+  copyTextToClipboard,
   escapeHtml,
+  getCurrentPageLink,
   getAdminLoginLink,
-  getAdminPanelLink,
   getPurchaseLink,
   getQrUrl,
   getRestaurantOrderLink,
+  getRestaurantPortalLoginLink,
   getRestaurantQrUrl,
   round2,
   toSafeNumber,
@@ -33,10 +37,10 @@ import {
   type AppUserRow,
   type DeliveryFilter,
   type ItemAvailability,
+  type LocalStorePolicyRow,
   type Order,
   type OrderItem,
   type PurchaseDemandRow,
-  type PurchaseNeedMode,
   type PurchaseDayLockRow,
   type PurchaseEdit,
   type PurchasePlanDbRow,
@@ -45,6 +49,8 @@ import {
   type Restaurant,
   type SourceOrderRef,
   type StockQtyRow,
+  type SupportIssueRow,
+  type WarehouseTransactionRow,
 } from "@/features/admin/types";
 import { adminRepository } from "@/features/admin/repositories/adminRepository";
 import { adminQueryKeys } from "@/features/admin/queryKeys";
@@ -57,6 +63,7 @@ import PurchasePlanPage from "@/features/purchase/pages/PurchasePlanPage";
 import PurchaseBuyPage from "@/features/purchase/pages/PurchaseBuyPage";
 import PurchaseFinalizedPage from "@/features/purchase/pages/PurchaseFinalizedPage";
 import PurchaseStockPage from "@/features/purchase/pages/PurchaseStockPage";
+import LocalStorePanel from "@/features/admin/components/LocalStorePanel";
 import SalesPanel from "./SalesPanel";
 import type { SalesTabKey } from "./SalesPanel";
 import ModuleLayout from "@/layouts/ModuleLayout";
@@ -83,7 +90,9 @@ const AdminPanel = ({ mode = "admin" }: { mode?: "admin" | "purchase" }) => {
   const initialTab = searchParams.get("ordersTab") || searchParams.get("tab");
   const initialSalesTab = searchParams.get("salesTab");
   const initialPurchaseTab = searchParams.get("purchaseTab");
-  const initialPurchaseDate = searchParams.get("purchaseDate");
+  const initialWarehouseTab = searchParams.get("warehouseTab");
+  const initialWarehouseFromDate = searchParams.get("warehouseFromDate");
+  const initialWarehouseToDate = searchParams.get("warehouseToDate");
   const initialRestaurantFilter = searchParams.get("restaurant") || "";
   const [activeTab, setActiveTab] = useState<OrderStatus>(
     initialTab === ORDER_STATUS.pending ||
@@ -105,10 +114,11 @@ const AdminPanel = ({ mode = "admin" }: { mode?: "admin" | "purchase" }) => {
           initialView === "delivery" ||
           initialView === "sales" ||
           initialView === "purchase" ||
+          initialView === "warehouse" ||
           initialView === "restaurants" ||
           initialView === "stock" ||
           initialView === "users"
-        ? (initialView as AdminView)
+        ? (initialView === "stock" ? "warehouse" : (initialView as AdminView))
         : "orders",
   );
   const [activeSalesTab, setActiveSalesTab] = useState<SalesTabKey>(
@@ -126,11 +136,17 @@ const AdminPanel = ({ mode = "admin" }: { mode?: "admin" | "purchase" }) => {
       ? normalizedInitialPurchaseTab
       : "plan",
   );
+  const [activeWarehouseTab, setActiveWarehouseTab] = useState<"overview" | "policy" | "movements">(
+    initialWarehouseTab === "policy" || initialWarehouseTab === "movements" || initialWarehouseTab === "overview"
+      ? initialWarehouseTab
+      : "overview",
+  );
   const [restaurantFilter, setRestaurantFilter] = useState(initialRestaurantFilter);
   const [newRestaurantName, setNewRestaurantName] = useState("");
   const [newRestaurantSlug, setNewRestaurantSlug] = useState("");
   const [showPurchaseQr, setShowPurchaseQr] = useState(false);
   const [previewRestaurantSlug, setPreviewRestaurantSlug] = useState<string | null>(null);
+  const [activeStockIconItemCode, setActiveStockIconItemCode] = useState<string | null>(null);
   const [restaurantError, setRestaurantError] = useState("");
   const [restaurantSuccess, setRestaurantSuccess] = useState("");
   const [purchaseEdits, setPurchaseEdits] = useState<Record<string, PurchaseEdit>>({});
@@ -141,26 +157,46 @@ const AdminPanel = ({ mode = "admin" }: { mode?: "admin" | "purchase" }) => {
   const [newUsername, setNewUsername] = useState("");
   const [newUserPassword, setNewUserPassword] = useState("");
   const [newUserRole, setNewUserRole] = useState<"admin" | "purchase" | "sales">("purchase");
+  const [userError, setUserError] = useState("");
+  const [userSuccess, setUserSuccess] = useState("");
+  const [pendingUserToggleId, setPendingUserToggleId] = useState<string | null>(null);
+  const [warehouseItemSearch, setWarehouseItemSearch] = useState("");
   const [deliveryFilter, setDeliveryFilter] = useState<DeliveryFilter>("active");
   const [deliverySearch, setDeliverySearch] = useState("");
   const [deliveryExpanded, setDeliveryExpanded] = useState<Record<string, boolean>>({});
+  const [portalPinByRestaurantId, setPortalPinByRestaurantId] = useState<Record<string, string>>({});
+  const [supportResolutionByIssueId, setSupportResolutionByIssueId] = useState<Record<string, string>>({});
+  const [warehousePage, setWarehousePage] = useState(1);
+  const [supportIssuesPage, setSupportIssuesPage] = useState(1);
+  const WAREHOUSE_PAGE_SIZE = 200;
+  const SUPPORT_ISSUES_PAGE_SIZE = 50;
   const todayIso = getIndiaDateIso();
-  const [purchaseDate, setPurchaseDate] = useState(
-    initialPurchaseDate && /^\d{4}-\d{2}-\d{2}$/.test(initialPurchaseDate) ? initialPurchaseDate : todayIso,
-  );
-  const [purchaseNeedMode, setPurchaseNeedMode] = useState<PurchaseNeedMode>("net");
+  const purchaseDate = todayIso;
   const ordersWindowStartIso = getIndiaDateDaysAgoIso(30);
+  const warehouseWindowStartIso = getIndiaDateDaysAgoIso(30);
   const purchaseHistoryWindowStartIso = getIndiaDateDaysAgoIso(45);
   const [ordersFromDate, setOrdersFromDate] = useState(ordersWindowStartIso);
   const [ordersToDate, setOrdersToDate] = useState(todayIso);
   const [purchaseHistoryFromDate, setPurchaseHistoryFromDate] = useState(purchaseHistoryWindowStartIso);
   const [purchaseHistoryToDate, setPurchaseHistoryToDate] = useState(todayIso);
+  const [warehouseFromDate, setWarehouseFromDate] = useState(
+    initialWarehouseFromDate && /^\d{4}-\d{2}-\d{2}$/.test(initialWarehouseFromDate)
+      ? initialWarehouseFromDate
+      : warehouseWindowStartIso,
+  );
+  const [warehouseToDate, setWarehouseToDate] = useState(
+    initialWarehouseToDate && /^\d{4}-\d{2}-\d{2}$/.test(initialWarehouseToDate)
+      ? initialWarehouseToDate
+      : todayIso,
+  );
   const safeOrdersFromDate = ordersFromDate <= ordersToDate ? ordersFromDate : ordersToDate;
   const safeOrdersToDate = ordersFromDate <= ordersToDate ? ordersToDate : ordersFromDate;
   const safePurchaseHistoryFromDate =
     purchaseHistoryFromDate <= purchaseHistoryToDate ? purchaseHistoryFromDate : purchaseHistoryToDate;
   const safePurchaseHistoryToDate =
     purchaseHistoryFromDate <= purchaseHistoryToDate ? purchaseHistoryToDate : purchaseHistoryFromDate;
+  const safeWarehouseFromDate = warehouseFromDate <= warehouseToDate ? warehouseFromDate : warehouseToDate;
+  const safeWarehouseToDate = warehouseFromDate <= warehouseToDate ? warehouseToDate : warehouseFromDate;
 
   useEffect(() => {
     setPurchaseEdits({});
@@ -192,26 +228,61 @@ const AdminPanel = ({ mode = "admin" }: { mode?: "admin" | "purchase" }) => {
   }, [isSalesSession, activeView]);
 
   useEffect(() => {
-    const next = new URLSearchParams(searchParams);
+    const next = new URLSearchParams();
     next.set("view", activeView);
-    next.set("ordersTab", activeTab);
-    next.set("salesTab", activeSalesTab);
-    next.set("purchaseTab", activePurchaseTab);
-    next.set("purchaseDate", purchaseDate);
-    if (restaurantFilter) {
-      next.set("restaurant", restaurantFilter);
-    } else {
-      next.delete("restaurant");
+
+    if (activeView === "orders") {
+      next.set("ordersTab", activeTab);
+      if (restaurantFilter) {
+        next.set("restaurant", restaurantFilter);
+      }
+    } else if (activeView === "sales") {
+      next.set("salesTab", activeSalesTab);
+    } else if (activeView === "purchase") {
+      next.set("purchaseTab", activePurchaseTab);
+    } else if (activeView === "warehouse") {
+      next.set("warehouseTab", activeWarehouseTab);
+      if (activeWarehouseTab === "movements") {
+        next.set("warehouseFromDate", safeWarehouseFromDate);
+        next.set("warehouseToDate", safeWarehouseToDate);
+      }
     }
+
     if (next.toString() !== searchParams.toString()) {
       setSearchParams(next, { replace: true });
     }
-  }, [activeView, activeTab, activeSalesTab, activePurchaseTab, purchaseDate, restaurantFilter, searchParams, setSearchParams]);
+  }, [
+    activeView,
+    activeTab,
+    activeSalesTab,
+    activePurchaseTab,
+    activeWarehouseTab,
+    safeWarehouseFromDate,
+    safeWarehouseToDate,
+    restaurantFilter,
+    searchParams,
+    setSearchParams,
+  ]);
+
+  useEffect(() => {
+    setWarehousePage(1);
+  }, [safeWarehouseFromDate, safeWarehouseToDate]);
+
+  useEffect(() => {
+    setSupportIssuesPage(1);
+  }, [activeView]);
+
+  const shouldLoadOrders =
+    isPurchaseMode || activeView === "orders" || activeView === "delivery" || activeView === "purchase";
 
   const { data: orders = [], isLoading } = useQuery({
     queryKey: adminQueryKeys.orders(safeOrdersFromDate, safeOrdersToDate),
     queryFn: () => adminRepository.listOrders(safeOrdersFromDate, safeOrdersToDate),
-    refetchInterval: APP_CONFIG.admin.pollIntervalMs,
+    enabled: shouldLoadOrders,
+    refetchInterval:
+      shouldLoadOrders && !isPurchaseMode && (activeView === "orders" || activeView === "delivery")
+        ? APP_CONFIG.admin.pollIntervalMs
+        : false,
     staleTime: 15_000,
     refetchOnWindowFocus: false,
   });
@@ -223,7 +294,12 @@ const AdminPanel = ({ mode = "admin" }: { mode?: "admin" | "purchase" }) => {
     refetchOnWindowFocus: false,
   });
 
-  const { data: appUsers = [] } = useQuery({
+  const {
+    data: appUsers = [],
+    isLoading: isUsersLoading,
+    error: usersError,
+    refetch: refetchUsers,
+  } = useQuery({
     queryKey: adminQueryKeys.appUsers(),
     queryFn: () => adminRepository.listAppUsers(),
     staleTime: 30_000,
@@ -244,16 +320,9 @@ const AdminPanel = ({ mode = "admin" }: { mode?: "admin" | "purchase" }) => {
     refetchOnWindowFocus: false,
   });
 
-  const { data: purchaseDaySetting } = useQuery({
-    queryKey: adminQueryKeys.purchaseDaySetting(purchaseDate),
-    queryFn: () => adminRepository.getPurchaseDaySetting(purchaseDate),
-    staleTime: 15_000,
-    refetchOnWindowFocus: false,
-  });
-
   const { data: purchaseDemandRows = [] } = useQuery({
-    queryKey: adminQueryKeys.purchaseDemand(purchaseDate, purchaseNeedMode),
-    queryFn: () => adminRepository.getPurchaseDemand(purchaseDate, purchaseNeedMode),
+    queryKey: adminQueryKeys.purchaseDemand(purchaseDate),
+    queryFn: () => adminRepository.getPurchaseDemand(purchaseDate),
     staleTime: 10_000,
     refetchOnWindowFocus: false,
   });
@@ -265,11 +334,32 @@ const AdminPanel = ({ mode = "admin" }: { mode?: "admin" | "purchase" }) => {
     refetchOnWindowFocus: false,
   });
 
-  useEffect(() => {
-    if (!purchaseDaySetting?.need_mode) return;
-    const nextMode = purchaseDaySetting.need_mode === "gross" ? "gross" : "net";
-    setPurchaseNeedMode(nextMode);
-  }, [purchaseDaySetting?.need_mode]);
+  const { data: localStorePolicies = [] } = useQuery({
+    queryKey: adminQueryKeys.localStorePolicies(),
+    queryFn: () => adminRepository.listLocalStorePolicies(),
+    staleTime: 20_000,
+    refetchOnWindowFocus: false,
+  });
+
+  const { data: warehouseTransactionsPageData } = useQuery({
+    queryKey: adminQueryKeys.warehouseTransactions(safeWarehouseFromDate, safeWarehouseToDate, warehousePage, WAREHOUSE_PAGE_SIZE),
+    queryFn: () => adminRepository.listWarehouseTransactions(safeWarehouseFromDate, safeWarehouseToDate, warehousePage, WAREHOUSE_PAGE_SIZE),
+    staleTime: 15_000,
+    refetchOnWindowFocus: false,
+    enabled: !isPurchaseMode && activeView === "warehouse" && activeWarehouseTab === "movements",
+  });
+  const warehouseTransactions = warehouseTransactionsPageData?.rows ?? [];
+  const hasMoreWarehouseTransactions = warehouseTransactionsPageData?.hasMore ?? false;
+
+  const { data: supportIssuesPageData } = useQuery({
+    queryKey: adminQueryKeys.supportIssues(supportIssuesPage, SUPPORT_ISSUES_PAGE_SIZE),
+    queryFn: () => adminRepository.listSupportIssues(supportIssuesPage, SUPPORT_ISSUES_PAGE_SIZE),
+    staleTime: 15_000,
+    refetchOnWindowFocus: false,
+    enabled: !isPurchaseMode && activeView === "restaurants",
+  });
+  const supportIssues = supportIssuesPageData?.rows ?? [];
+  const hasMoreSupportIssues = supportIssuesPageData?.hasMore ?? false;
 
   const { data: purchaseDayLockRows = [] } = useQuery({
     queryKey: adminQueryKeys.purchaseDayLock(purchaseDate),
@@ -302,6 +392,10 @@ const AdminPanel = ({ mode = "admin" }: { mode?: "admin" | "purchase" }) => {
     return map;
   }, [availabilityRows]);
 
+  useEffect(() => {
+    hydrateCustomItemIcons(availabilityRows);
+  }, [availabilityRows]);
+
   const stockQtyMap = useMemo(() => {
     const map = new Map<string, number>();
     stockQtyRows.forEach((row) => {
@@ -311,6 +405,64 @@ const AdminPanel = ({ mode = "admin" }: { mode?: "admin" | "purchase" }) => {
     return map;
   }, [stockQtyRows]);
 
+  const localStorePolicyByCode = useMemo(() => {
+    const map = new Map<string, LocalStorePolicyRow>();
+    localStorePolicies.forEach((row) => map.set(row.item_code, row));
+    return map;
+  }, [localStorePolicies]);
+
+  const warehouseCatalogRows = useMemo(() => {
+    const query = warehouseItemSearch.trim().toLowerCase();
+    const rows = CATALOG.map((item) => {
+      const availableQty = round2(stockQtyMap.get(item.code) ?? stockQtyMap.get(item.en) ?? 0);
+      const policy = localStorePolicyByCode.get(item.code);
+      const requiredStockQty = round2(Math.max(0, policy?.required_stock_qty ?? 0));
+      const isLow = requiredStockQty > 0 && availableQty < requiredStockQty;
+      return {
+        ...item,
+        availableQty,
+        requiredStockQty,
+        isLow,
+      };
+    });
+    if (!query) return rows;
+    return rows.filter((row) => row.en.toLowerCase().includes(query) || row.code.toLowerCase().includes(query));
+  }, [localStorePolicyByCode, stockQtyMap, warehouseItemSearch]);
+
+  const warehouseSummary = useMemo(() => {
+    const totalItems = warehouseCatalogRows.length;
+    const totalAvailableQty = round2(
+      warehouseCatalogRows.reduce((sum, row) => sum + Math.max(0, toSafeNumber(row.availableQty, 0)), 0),
+    );
+    const lowStockCount = warehouseCatalogRows.filter((row) => row.isLow).length;
+    return { totalItems, totalAvailableQty, lowStockCount };
+  }, [warehouseCatalogRows]);
+
+  const warehouseMovementSummary = useMemo(() => {
+    const summary = {
+      purchaseIn: 0,
+      dispatchOut: 0,
+      retailOut: 0,
+      adjustment: 0,
+      net: 0,
+    };
+    warehouseTransactions.forEach((row) => {
+      const qty = round2(Math.abs(toSafeNumber(row.qty, 0)));
+      if (row.txn_type === "purchase_in") summary.purchaseIn += qty;
+      if (row.txn_type === "dispatch_out") summary.dispatchOut += qty;
+      if (row.txn_type === "retail_out") summary.retailOut += qty;
+      if (row.txn_type === "adjustment") summary.adjustment += qty;
+      summary.net += toSafeNumber(row.signed_qty, 0);
+    });
+    return {
+      purchaseIn: round2(summary.purchaseIn),
+      dispatchOut: round2(summary.dispatchOut),
+      retailOut: round2(summary.retailOut),
+      adjustment: round2(summary.adjustment),
+      net: round2(summary.net),
+    };
+  }, [warehouseTransactions]);
+
   const isPurchaseDayLocked = Boolean(purchaseDayLockRows[0]?.is_locked);
 
   const updateStatus = useMutation({
@@ -319,7 +471,7 @@ const AdminPanel = ({ mode = "admin" }: { mode?: "admin" | "purchase" }) => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: adminQueryKeys.orders(safeOrdersFromDate, safeOrdersToDate) });
-      queryClient.invalidateQueries({ queryKey: adminQueryKeys.purchaseDemand(purchaseDate, purchaseNeedMode) });
+      queryClient.invalidateQueries({ queryKey: adminQueryKeys.purchaseDemand(purchaseDate) });
     },
   });
 
@@ -334,20 +486,11 @@ const AdminPanel = ({ mode = "admin" }: { mode?: "admin" | "purchase" }) => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: adminQueryKeys.orders(safeOrdersFromDate, safeOrdersToDate) });
       queryClient.invalidateQueries({ queryKey: adminQueryKeys.stockQty() });
+      queryClient.invalidateQueries({ queryKey: ["admin", "warehouse-transactions"] });
     },
     onError: (error: Error) => {
       setRestaurantSuccess("");
       setRestaurantError(error.message || "Could not post dispatch stock out.");
-    },
-  });
-
-  const upsertPurchaseNeedMode = useMutation({
-    mutationFn: async (mode: PurchaseNeedMode) => {
-      await adminRepository.upsertPurchaseDaySetting(purchaseDate, mode);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: adminQueryKeys.purchaseDaySetting(purchaseDate) });
-      queryClient.invalidateQueries({ queryKey: adminQueryKeys.purchaseDemand(purchaseDate, purchaseNeedMode) });
     },
   });
 
@@ -375,6 +518,57 @@ const AdminPanel = ({ mode = "admin" }: { mode?: "admin" | "purchase" }) => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: adminQueryKeys.restaurants() }),
   });
 
+  const setRestaurantPortalPin = useMutation({
+    mutationFn: async ({ restaurantId, username, pin }: { restaurantId: string; username: string; pin: string }) => {
+      await adminRepository.setRestaurantPortalPin({
+        restaurantId,
+        username,
+        pin,
+        actor: isPurchaseMode ? purchaseSessionUser?.username || "admin" : "admin",
+      });
+    },
+    onSuccess: (_data, variables) => {
+      setPortalPinByRestaurantId((prev) => ({ ...prev, [variables.restaurantId]: "" }));
+      setRestaurantError("");
+      setRestaurantSuccess(`Portal PIN updated for ${variables.username}.`);
+    },
+    onError: (error: Error) => {
+      setRestaurantSuccess("");
+      setRestaurantError(error.message || "Could not update portal PIN.");
+    },
+  });
+
+  const updateSupportIssue = useMutation({
+    mutationFn: async ({
+      issueId,
+      status,
+      resolutionNote,
+    }: {
+      issueId: string;
+      status: "open" | "in_review" | "resolved";
+      resolutionNote?: string;
+    }) => {
+      await adminRepository.updateSupportIssue({
+        issueId,
+        status,
+        resolutionNote,
+        actor: isPurchaseMode ? purchaseSessionUser?.username || "admin" : "admin",
+      });
+    },
+    onSuccess: (_data, variables) => {
+      if (variables.status === "resolved") {
+      setSupportResolutionByIssueId((prev) => ({ ...prev, [variables.issueId]: "" }));
+      }
+      setRestaurantError("");
+      setRestaurantSuccess("Support issue updated.");
+      queryClient.invalidateQueries({ queryKey: ["admin", "support-issues"] });
+    },
+    onError: (error: Error) => {
+      setRestaurantSuccess("");
+      setRestaurantError(error.message || "Could not update support issue.");
+    },
+  });
+
   const createAppUser = useMutation({
     mutationFn: async ({
       name,
@@ -387,14 +581,33 @@ const AdminPanel = ({ mode = "admin" }: { mode?: "admin" | "purchase" }) => {
       password: string;
       role: "admin" | "purchase" | "sales";
     }) => {
-      await adminRepository.createAppUser(name, username.trim().toLowerCase(), password, role);
+      const normalizedUsername = username.trim().toLowerCase();
+      const usernameTaken = await adminRepository.isUsernameTaken(normalizedUsername);
+      if (usernameTaken) {
+        throw new Error("Username already exists.");
+      }
+      await adminRepository.createAppUser(name.trim(), normalizedUsername, password, role);
+    },
+    onMutate: () => {
+      setUserError("");
+      setUserSuccess("");
     },
     onSuccess: () => {
       setNewUserName("");
       setNewUsername("");
       setNewUserPassword("");
       setNewUserRole("purchase");
+      setUserError("");
+      setUserSuccess("User created.");
       queryClient.invalidateQueries({ queryKey: adminQueryKeys.appUsers() });
+    },
+    onError: (error: Error & { code?: string }) => {
+      setUserSuccess("");
+      if (error?.code === "23505") {
+        setUserError("Username already exists.");
+        return;
+      }
+      setUserError(error.message || "Could not create user.");
     },
   });
 
@@ -402,7 +615,23 @@ const AdminPanel = ({ mode = "admin" }: { mode?: "admin" | "purchase" }) => {
     mutationFn: async ({ id, isActive }: { id: string; isActive: boolean }) => {
       await adminRepository.setAppUserActive(id, isActive);
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: adminQueryKeys.appUsers() }),
+    onMutate: ({ id }) => {
+      setPendingUserToggleId(id);
+      setUserError("");
+      setUserSuccess("");
+    },
+    onSuccess: (_, variables) => {
+      setUserError("");
+      setUserSuccess(variables.isActive ? "User enabled." : "User disabled.");
+      queryClient.invalidateQueries({ queryKey: adminQueryKeys.appUsers() });
+    },
+    onError: (error: Error) => {
+      setUserSuccess("");
+      setUserError(error.message || "Could not update user status.");
+    },
+    onSettled: () => {
+      setPendingUserToggleId(null);
+    },
   });
 
   const toggleItemAvailability = useMutation({
@@ -411,6 +640,69 @@ const AdminPanel = ({ mode = "admin" }: { mode?: "admin" | "purchase" }) => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: adminQueryKeys.itemAvailability() });
+    },
+  });
+
+  const upsertStockItemIcon = useMutation({
+    mutationFn: async ({
+      itemCode,
+      itemEn,
+      iconUrl,
+    }: {
+      itemCode: string;
+      itemEn: string;
+      iconUrl: string | null;
+    }) => {
+      await adminRepository.upsertItemIcon(itemCode, itemEn, iconUrl);
+    },
+    onSuccess: (_, variables) => {
+      setRestaurantError("");
+      setRestaurantSuccess(
+        variables.iconUrl
+          ? `${variables.itemEn} icon updated.`
+          : `${variables.itemEn} icon removed.`,
+      );
+      queryClient.invalidateQueries({ queryKey: adminQueryKeys.itemAvailability() });
+    },
+    onError: (error: Error) => {
+      setRestaurantSuccess("");
+      setRestaurantError(error.message || "Could not update item icon.");
+    },
+  });
+
+  const upsertLocalStorePolicy = useMutation({
+    mutationFn: async (payload: {
+      item_code: string;
+      item_en: string;
+      required_stock_qty: number;
+    }) => {
+      await adminRepository.upsertLocalStorePolicy(payload);
+    },
+    onSuccess: () => {
+      setRestaurantError("");
+      setRestaurantSuccess("Warehouse policy saved.");
+      queryClient.invalidateQueries({ queryKey: adminQueryKeys.localStorePolicies() });
+      queryClient.invalidateQueries({ queryKey: adminQueryKeys.purchaseDemand(purchaseDate) });
+    },
+    onError: (error: Error) => {
+      setRestaurantSuccess("");
+      setRestaurantError(error.message || "Could not save warehouse policy.");
+    },
+  });
+
+  const deleteLocalStorePolicy = useMutation({
+    mutationFn: async (itemCode: string) => {
+      await adminRepository.deleteLocalStorePolicy(itemCode);
+    },
+    onSuccess: () => {
+      setRestaurantError("");
+      setRestaurantSuccess("Warehouse policy removed.");
+      queryClient.invalidateQueries({ queryKey: adminQueryKeys.localStorePolicies() });
+      queryClient.invalidateQueries({ queryKey: adminQueryKeys.purchaseDemand(purchaseDate) });
+    },
+    onError: (error: Error) => {
+      setRestaurantSuccess("");
+      setRestaurantError(error.message || "Could not remove warehouse policy.");
     },
   });
 
@@ -561,6 +853,7 @@ const AdminPanel = ({ mode = "admin" }: { mode?: "admin" | "purchase" }) => {
       await Promise.all([
         queryClient.refetchQueries({ queryKey: adminQueryKeys.purchasePlans(purchaseDate) }),
         queryClient.refetchQueries({ queryKey: adminQueryKeys.stockQty() }),
+        queryClient.refetchQueries({ queryKey: ["admin", "warehouse-transactions"] }),
         queryClient.refetchQueries({ queryKey: adminQueryKeys.purchaseStockHistory(safePurchaseHistoryFromDate, safePurchaseHistoryToDate) }),
         ...(historyDate ? [queryClient.refetchQueries({ queryKey: adminQueryKeys.purchaseStockDetails(historyDate) })] : []),
         queryClient.refetchQueries({ queryKey: adminQueryKeys.purchaseDayLock(purchaseDate) }),
@@ -700,8 +993,13 @@ const AdminPanel = ({ mode = "admin" }: { mode?: "admin" | "purchase" }) => {
       if (activePurchaseTab === "stock") return "/purchase/stock";
       return "/purchase";
     }
+    if (activeView === "warehouse") {
+      if (activeWarehouseTab === "policy") return "/warehouse/policy";
+      if (activeWarehouseTab === "movements") return "/warehouse/movements";
+      return "/warehouse";
+    }
     return `/${activeView}`;
-  }, [activeView, activeTab, activeSalesTab, activePurchaseTab]);
+  }, [activeView, activeTab, activeSalesTab, activePurchaseTab, activeWarehouseTab]);
 
   const applyPathToState = (path: string) => {
     const parsed = new URL(path, "http://local");
@@ -749,6 +1047,18 @@ const AdminPanel = ({ mode = "admin" }: { mode?: "admin" | "purchase" }) => {
       return;
     }
 
+    if (pathname.startsWith("/warehouse")) {
+      setActiveView("warehouse");
+      if (pathname.startsWith("/warehouse/policy")) {
+        setActiveWarehouseTab("policy");
+      } else if (pathname.startsWith("/warehouse/movements")) {
+        setActiveWarehouseTab("movements");
+      } else {
+        setActiveWarehouseTab("overview");
+      }
+      return;
+    }
+
     if (pathname.startsWith("/delivery")) {
       setActiveView("delivery");
       return;
@@ -758,7 +1068,8 @@ const AdminPanel = ({ mode = "admin" }: { mode?: "admin" | "purchase" }) => {
       return;
     }
     if (pathname.startsWith("/stock")) {
-      setActiveView("stock");
+      setActiveView("warehouse");
+      setActiveWarehouseTab("overview");
       return;
     }
     if (pathname.startsWith("/users")) {
@@ -777,19 +1088,14 @@ const AdminPanel = ({ mode = "admin" }: { mode?: "admin" | "purchase" }) => {
     return map;
   }, []);
 
-  const confirmedOrdersForPurchaseDate = useMemo(
-    () =>
-      orders.filter(
-        (o) =>
-          o.status === ORDER_STATUS.confirmed &&
-          o.delivery_date === purchaseDate,
-      ),
-    [orders, purchaseDate],
+  const confirmedOrdersForPurchaseQueue = useMemo(
+    () => orders.filter((o) => o.status === ORDER_STATUS.confirmed),
+    [orders],
   );
 
   const sourceOrdersByItemCode = useMemo(() => {
     const map = new Map<string, SourceOrderRef[]>();
-    confirmedOrdersForPurchaseDate.forEach((order) => {
+    confirmedOrdersForPurchaseQueue.forEach((order) => {
       const items = (order.items || []) as OrderItem[];
       items.forEach((item) => {
         const itemCode = item.code?.trim() || item.en.trim();
@@ -803,14 +1109,14 @@ const AdminPanel = ({ mode = "admin" }: { mode?: "admin" | "purchase" }) => {
       });
     });
     return map;
-  }, [confirmedOrdersForPurchaseDate]);
+  }, [confirmedOrdersForPurchaseQueue]);
 
   const aggregatedPurchaseRows = useMemo(() => {
     if (purchaseDemandRows.length === 0) return [] as PurchasePlanRow[];
     return purchaseDemandRows.map((row: PurchaseDemandRow) => {
       const code = row.item_code || row.item_en;
       const meta = catalogMetaMap.get(code) || catalogMetaMap.get(row.item_en);
-      const requiredQty = round2(Math.max(0, row.required_qty));
+      const requiredQty = round2(Math.max(0, row.purchase_required_qty));
       const refs = sourceOrdersByItemCode.get(code) || sourceOrdersByItemCode.get(row.item_en) || null;
       return {
         item_code: code,
@@ -950,7 +1256,8 @@ const AdminPanel = ({ mode = "admin" }: { mode?: "admin" | "purchase" }) => {
 
   const copyLink = async (link: string, label: string) => {
     try {
-      await navigator.clipboard.writeText(link);
+      const copied = await copyTextToClipboard(link);
+      if (!copied) throw new Error("copy_failed");
       setRestaurantSuccess(`Copied ${label}`);
       setRestaurantError("");
     } catch {
@@ -1253,7 +1560,7 @@ const AdminPanel = ({ mode = "admin" }: { mode?: "admin" | "purchase" }) => {
         <h1>Final Purchase Sheet (Confirmed Orders)</h1>
         <div class="meta">
           <p><strong>Date:</strong> ${escapeHtml(formatIndiaDate(new Date()))}</p>
-          <p><strong>Confirmed Orders (Selected Date):</strong> ${confirmedOrdersForPurchaseDate.length}</p>
+          <p><strong>Confirmed Orders (Rolling Queue):</strong> ${confirmedOrdersForPurchaseQueue.length}</p>
           <p><strong>Sheet Status:</strong> ${escapeHtml(purchaseSheetStatus)}</p>
           <p><strong>Total Required (kg):</strong> ${escapeHtml(String(purchaseTotals.requiredQty))}</p>
           <p><strong>Total Purchased (kg):</strong> ${escapeHtml(String(purchaseTotals.purchasedQty))}</p>
@@ -1402,46 +1709,9 @@ const AdminPanel = ({ mode = "admin" }: { mode?: "admin" | "purchase" }) => {
               <p className="text-xs text-muted-foreground mb-2">
                 Demand rows: <span className="font-semibold text-foreground">{purchaseDemandRows.length}</span>
               </p>
-              <div className="mb-3 flex flex-wrap items-center gap-2">
-                <label className="text-xs text-muted-foreground">Purchase Date</label>
-                <Input
-                  type="date"
-                  value={purchaseDate}
-                  max={todayIso}
-                  onChange={(e) => setPurchaseDate(e.target.value || todayIso)}
-                  className="h-9 w-[160px]"
-                />
-                {purchaseDate !== todayIso ? (
-                  <Button type="button" variant="outline" size="sm" onClick={() => setPurchaseDate(todayIso)}>
-                    Today
-                  </Button>
-                ) : null}
-                <label className="text-xs text-muted-foreground ml-2">Need Mode</label>
-                <div className="flex gap-1">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={purchaseNeedMode === "net" ? "default" : "outline"}
-                    onClick={() => {
-                      setPurchaseNeedMode("net");
-                      upsertPurchaseNeedMode.mutate("net");
-                    }}
-                  >
-                    Net
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={purchaseNeedMode === "gross" ? "default" : "outline"}
-                    onClick={() => {
-                      setPurchaseNeedMode("gross");
-                      upsertPurchaseNeedMode.mutate("gross");
-                    }}
-                  >
-                    Gross
-                  </Button>
-                </div>
-              </div>
+              <p className="text-xs text-muted-foreground mb-3">
+                Rolling demand from all confirmed orders + warehouse required stock gap.
+              </p>
               {restaurantError ? <p className="text-xs text-destructive mb-2">{restaurantError}</p> : null}
               {restaurantSuccess ? <p className="text-xs text-emerald-700 mb-2">{restaurantSuccess}</p> : null}
               <TopTabs
@@ -1460,7 +1730,7 @@ const AdminPanel = ({ mode = "admin" }: { mode?: "admin" | "purchase" }) => {
               </section>
             ) : filteredPurchaseRows.length === 0 ? (
               <section className="bg-card rounded-lg border border-border p-4 mb-4">
-                <p className="text-sm text-muted-foreground py-6 text-center">No purchase demand items for selected date.</p>
+                <p className="text-sm text-muted-foreground py-6 text-center">No purchase demand items in rolling queue.</p>
               </section>
             ) : activePurchaseTab === "plan" ? (
               <PurchasePlanPage
@@ -1473,9 +1743,6 @@ const AdminPanel = ({ mode = "admin" }: { mode?: "admin" | "purchase" }) => {
                   const nextPending = filteredPurchaseRows.find((row) => remainingQtyForRow(row) > 0) || filteredPurchaseRows[0];
                   setCurrentPurchaseKey(nextPending?.item_code ?? null);
                   applyPathToState("/purchase/buy");
-                }}
-                onOpenNeedList={() => {
-                  setActivePurchaseTab("plan");
                 }}
               />
             ) : activePurchaseTab === "buy" ? (
@@ -1505,11 +1772,12 @@ const AdminPanel = ({ mode = "admin" }: { mode?: "admin" | "purchase" }) => {
                 onPrev={() => moveWizardToIndex(currentPurchaseIndex - 1)}
                 onSaveAndNext={handleMarkBoughtAndNext}
                 onSkip={() => moveWizardToIndex(currentPurchaseIndex + 1)}
-                onFinalize={handleFinalizePurchase}
+                onReviewFinalize={() => setActivePurchaseTab("finalized")}
                 onBackToPlan={() => applyPathToState("/purchase")}
               />
             ) : activePurchaseTab === "finalized" ? (
               <PurchaseFinalizedPage
+                rows={filteredPurchaseRows}
                 coveredCount={coveredPurchaseRows.length}
                 totalCount={filteredPurchaseRows.length}
                 pendingCount={pendingPurchaseRows.length}
@@ -1523,6 +1791,7 @@ const AdminPanel = ({ mode = "admin" }: { mode?: "admin" | "purchase" }) => {
                 isLocked={isPurchaseDayLocked}
                 isSavePending={savePurchaseSheet.isPending}
                 isFinalizePending={savePurchaseSheet.isPending || finalizePurchaseDay.isPending}
+                onBackToBuy={() => setActivePurchaseTab("buy")}
                 onSaveDraft={handleSaveDraft}
                 onFinalize={handleFinalizePurchase}
                 onPrint={printPurchaseList}
@@ -1569,7 +1838,7 @@ const AdminPanel = ({ mode = "admin" }: { mode?: "admin" | "purchase" }) => {
                 <Button type="button" variant="outline" size="sm" onClick={() => copyLink(getAdminLoginLink(), "Admin Login link")}>
                   Copy Admin Login
                 </Button>
-                <Button type="button" variant="outline" size="sm" onClick={() => copyLink(getAdminPanelLink(), "Admin Panel link")}>
+                <Button type="button" variant="outline" size="sm" onClick={() => copyLink(getCurrentPageLink(), "Admin Panel link")}>
                   Copy Admin Panel
                 </Button>
                 <Button type="button" variant="outline" size="sm" onClick={() => copyLink(getPurchaseLink(), "Purchase link")}>
@@ -1641,6 +1910,14 @@ const AdminPanel = ({ mode = "admin" }: { mode?: "admin" | "purchase" }) => {
                         type="button"
                         size="sm"
                         variant="outline"
+                        onClick={() => copyLink(getRestaurantPortalLoginLink(r.slug), `${r.name} portal login link`)}
+                      >
+                        Copy Portal Link
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
                         onClick={() => setPreviewRestaurantSlug((prev) => (prev === r.slug ? null : r.slug))}
                       >
                         {previewRestaurantSlug === r.slug ? "Hide QR" : "Show QR"}
@@ -1675,64 +1952,448 @@ const AdminPanel = ({ mode = "admin" }: { mode?: "admin" | "purchase" }) => {
                     <span>{getRestaurantOrderLink(r.slug)}</span>
                     <span>{r.is_active === false ? "Disabled" : "Active"}</span>
                   </div>
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>{getRestaurantPortalLoginLink(r.slug)}</span>
+                    <span>Portal Login</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Input
+                      value={portalPinByRestaurantId[r.id] || ""}
+                      onChange={(e) =>
+                        setPortalPinByRestaurantId((prev) => ({
+                          ...prev,
+                          [r.id]: e.target.value.replace(/[^0-9]/g, "").slice(0, 6),
+                        }))
+                      }
+                      placeholder="Set 4-6 digit PIN"
+                      className="h-8 w-[180px]"
+                      inputMode="numeric"
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => {
+                        const pin = (portalPinByRestaurantId[r.id] || "").trim();
+                        if (!/^[0-9]{4,6}$/.test(pin)) {
+                          setRestaurantSuccess("");
+                          setRestaurantError("PIN must be 4 to 6 digits.");
+                          return;
+                        }
+                        setRestaurantError("");
+                        setRestaurantSuccess("");
+                        setRestaurantPortalPin.mutate({ restaurantId: r.id, username: r.slug, pin });
+                      }}
+                      disabled={setRestaurantPortalPin.isPending}
+                    >
+                      Save Portal PIN
+                    </Button>
+                  </div>
                 </div>
               ))}
+            </div>
+
+            <div className="rounded-md border border-border p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">Support Inbox</p>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">{supportIssues.length} issues</span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={supportIssuesPage <= 1}
+                    onClick={() => setSupportIssuesPage((prev) => Math.max(1, prev - 1))}
+                  >
+                    Prev
+                  </Button>
+                  <span className="text-xs text-muted-foreground">Page {supportIssuesPage}</span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={!hasMoreSupportIssues}
+                    onClick={() => setSupportIssuesPage((prev) => prev + 1)}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+              {supportIssues.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-2">No support issues yet.</p>
+              ) : (
+                <div className="space-y-2 max-h-[420px] overflow-auto pr-1">
+                  {supportIssues.map((issue) => (
+                    <div key={issue.id} className="rounded-md border border-border p-2.5 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-semibold">{issue.restaurant_name}</p>
+                        <span className="text-xs px-2 py-0.5 rounded bg-muted text-muted-foreground">{issue.status}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {issue.issue_type.replaceAll("_", " ")} · {formatIsoDateDdMmYyyy(issue.created_at)} · {issue.order_id ? "Order linked" : "General"}
+                      </p>
+                      <p className="text-sm">{issue.note}</p>
+                      {issue.photo_data_urls?.length ? (
+                        <div className="flex flex-wrap gap-2">
+                          {issue.photo_data_urls.slice(0, 3).map((url) => (
+                            <img
+                              key={url}
+                              src={url}
+                              alt="Issue evidence"
+                              className="w-14 h-14 rounded border border-border object-cover bg-card"
+                            />
+                          ))}
+                        </div>
+                      ) : null}
+                      {issue.resolution_note ? (
+                        <p className="text-xs text-emerald-700">Resolution: {issue.resolution_note}</p>
+                      ) : null}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => updateSupportIssue.mutate({ issueId: issue.id, status: "in_review" })}
+                          disabled={updateSupportIssue.isPending || issue.status === "in_review"}
+                        >
+                          Mark In Review
+                        </Button>
+                        <Input
+                          value={supportResolutionByIssueId[issue.id] || ""}
+                          onChange={(e) =>
+                            setSupportResolutionByIssueId((prev) => ({
+                              ...prev,
+                              [issue.id]: e.target.value,
+                            }))
+                          }
+                          placeholder="Resolution note"
+                          className="h-8 min-w-[180px] flex-1"
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() =>
+                            updateSupportIssue.mutate({
+                              issueId: issue.id,
+                              status: "resolved",
+                              resolutionNote: supportResolutionByIssueId[issue.id] || issue.resolution_note || "",
+                            })
+                          }
+                          disabled={updateSupportIssue.isPending || issue.status === "resolved"}
+                        >
+                          Resolve
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </section>
         )}
 
-        {!isPurchaseMode && activeView === "stock" && (
-          <section className="bg-card rounded-lg border border-border p-4 mb-4 space-y-3">
-            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Stock</h2>
-            <div className="space-y-2 max-h-[70vh] overflow-auto pr-1">
-              {CATALOG.map((item) => {
-                const inStock = availabilityMap.get(item.code) ?? availabilityMap.get(item.en) ?? true;
-                const qty = round2(stockQtyMap.get(item.code) ?? stockQtyMap.get(item.en) ?? 0);
-                return (
-                  <div key={item.code} className="rounded-md border border-border p-2.5 flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium">{item.en}</p>
-                      <p className="text-xs text-muted-foreground">{item.code} · Qty {qty} kg</p>
-                    </div>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={inStock ? "default" : "destructive"}
-                      onClick={() => toggleItemAvailability.mutate({ 
-                        itemCode: item.code, 
-                        itemEn: item.en, 
-                        isInStock: !inStock 
-                      })}
-                      className="text-xs font-semibold"
-                    >
-                      {inStock ? "In Stock" : "Out of Stock"}
-                    </Button>
-                  </div>
-                );
-              })}
+        {!isPurchaseMode && activeView === "warehouse" && (
+          <section className="bg-card rounded-lg border border-border p-4 mb-4 space-y-4">
+            <div className="space-y-1">
+              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Warehouse</h2>
+              <p className="text-xs text-muted-foreground">Central inventory operations and policy.</p>
             </div>
+
+            <TopTabs
+              tabs={(moduleItems.find((item) => item.key === "warehouse")?.tabs ?? []).map((tab) => ({
+                ...tab,
+              }))}
+              activePath={activeTabPath}
+              onNavigate={applyPathToState}
+            />
+
+            {restaurantError && <p className="text-xs text-destructive">{restaurantError}</p>}
+            {restaurantSuccess && <p className="text-xs text-emerald-700">{restaurantSuccess}</p>}
+
+            {activeWarehouseTab === "overview" && (
+              <div className="space-y-3">
+                <div className="grid sm:grid-cols-3 gap-2">
+                  <div className="rounded-md border border-border p-3">
+                    <p className="text-xs text-muted-foreground">Items</p>
+                    <p className="text-lg font-semibold">{warehouseSummary.totalItems}</p>
+                  </div>
+                  <div className="rounded-md border border-border p-3">
+                    <p className="text-xs text-muted-foreground">Total Qty</p>
+                    <p className="text-lg font-semibold">{warehouseSummary.totalAvailableQty} kg</p>
+                  </div>
+                  <div className="rounded-md border border-border p-3">
+                    <p className="text-xs text-muted-foreground">Low Stock</p>
+                    <p className="text-lg font-semibold">{warehouseSummary.lowStockCount}</p>
+                  </div>
+                </div>
+
+                <Input
+                  value={warehouseItemSearch}
+                  onChange={(e) => setWarehouseItemSearch(e.target.value)}
+                  placeholder="Search item by name or code"
+                />
+
+                <div className="space-y-2 max-h-[70vh] overflow-auto pr-1">
+                  {warehouseCatalogRows.map((item) => {
+                    const inStock = availabilityMap.get(item.code) ?? availabilityMap.get(item.en) ?? true;
+                    const qty = item.availableQty;
+                    const isUploaderOpen = activeStockIconItemCode === item.code;
+                    return (
+                      <div key={item.code} className="rounded-md border border-border p-2.5 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <ItemIcon itemEn={item.en} category={item.category} size={20} />
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate">{item.en}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {item.code} · Qty {qty} kg
+                                {item.requiredStockQty > 0 ? ` · Required ${item.requiredStockQty} kg` : ""}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() =>
+                                setActiveStockIconItemCode((prev) => (prev === item.code ? null : item.code))
+                              }
+                            >
+                              {isUploaderOpen ? "Close Upload" : "Upload"}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={upsertStockItemIcon.isPending}
+                              onClick={() =>
+                                upsertStockItemIcon.mutate({
+                                  itemCode: item.code,
+                                  itemEn: item.en,
+                                  iconUrl: null,
+                                })
+                              }
+                            >
+                              Remove Icon
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant={inStock ? "default" : "destructive"}
+                              onClick={() =>
+                                toggleItemAvailability.mutate({
+                                  itemCode: item.code,
+                                  itemEn: item.en,
+                                  isInStock: !inStock,
+                                })
+                              }
+                              className="text-xs font-semibold"
+                            >
+                              {inStock ? "In Stock" : "Out of Stock"}
+                            </Button>
+                          </div>
+                        </div>
+                        {isUploaderOpen && (
+                          <ItemIconUploader
+                            itemLabel={item.en}
+                            disabled={upsertStockItemIcon.isPending}
+                            onUploaded={async ({ dataUrl }) => {
+                              await upsertStockItemIcon.mutateAsync({
+                                itemCode: item.code,
+                                itemEn: item.en,
+                                iconUrl: dataUrl,
+                              });
+                              setActiveStockIconItemCode(null);
+                            }}
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {activeWarehouseTab === "policy" && (
+              <LocalStorePanel
+                stockItems={warehouseCatalogRows.map((row) => ({
+                  item_code: row.code,
+                  item_en: row.en,
+                  available_qty: row.availableQty,
+                }))}
+                policies={localStorePolicies}
+                isSaving={upsertLocalStorePolicy.isPending || deleteLocalStorePolicy.isPending}
+                onSavePolicy={(payload) => upsertLocalStorePolicy.mutate(payload)}
+                onDeletePolicy={(itemCode) => deleteLocalStorePolicy.mutate(itemCode)}
+              />
+            )}
+
+            {activeWarehouseTab === "movements" && (
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="text-xs text-muted-foreground">From</label>
+                  <Input
+                    type="date"
+                    value={warehouseFromDate}
+                    max={todayIso}
+                    onChange={(e) => setWarehouseFromDate(e.target.value || warehouseWindowStartIso)}
+                    className="h-9 w-[150px]"
+                  />
+                  <label className="text-xs text-muted-foreground">To</label>
+                  <Input
+                    type="date"
+                    value={warehouseToDate}
+                    max={todayIso}
+                    onChange={(e) => setWarehouseToDate(e.target.value || todayIso)}
+                    className="h-9 w-[150px]"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setWarehouseFromDate(warehouseWindowStartIso);
+                      setWarehouseToDate(todayIso);
+                    }}
+                  >
+                    Last 30 Days
+                  </Button>
+                </div>
+
+                <div className="grid sm:grid-cols-5 gap-2">
+                  <div className="rounded-md border border-border p-2.5">
+                    <p className="text-xs text-muted-foreground">Purchase In</p>
+                    <p className="text-sm font-semibold">{warehouseMovementSummary.purchaseIn}</p>
+                  </div>
+                  <div className="rounded-md border border-border p-2.5">
+                    <p className="text-xs text-muted-foreground">Dispatch Out</p>
+                    <p className="text-sm font-semibold">{warehouseMovementSummary.dispatchOut}</p>
+                  </div>
+                  <div className="rounded-md border border-border p-2.5">
+                    <p className="text-xs text-muted-foreground">Retail Out</p>
+                    <p className="text-sm font-semibold">{warehouseMovementSummary.retailOut}</p>
+                  </div>
+                  <div className="rounded-md border border-border p-2.5">
+                    <p className="text-xs text-muted-foreground">Adjustments</p>
+                    <p className="text-sm font-semibold">{warehouseMovementSummary.adjustment}</p>
+                  </div>
+                  <div className="rounded-md border border-border p-2.5">
+                    <p className="text-xs text-muted-foreground">Net</p>
+                    <p className="text-sm font-semibold">{warehouseMovementSummary.net}</p>
+                  </div>
+                </div>
+                <div className="flex items-center justify-end gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={warehousePage <= 1}
+                    onClick={() => setWarehousePage((prev) => Math.max(1, prev - 1))}
+                  >
+                    Prev
+                  </Button>
+                  <span className="text-xs text-muted-foreground">Page {warehousePage}</span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={!hasMoreWarehouseTransactions}
+                    onClick={() => setWarehousePage((prev) => prev + 1)}
+                  >
+                    Next
+                  </Button>
+                </div>
+
+                {warehouseTransactions.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-6 text-center">No warehouse transactions for selected range.</p>
+                ) : (
+                  <div className="rounded-md border border-border overflow-auto">
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-muted/50">
+                        <tr>
+                          <th className="text-left px-3 py-2">Date</th>
+                          <th className="text-left px-3 py-2">Type</th>
+                          <th className="text-left px-3 py-2">Item</th>
+                          <th className="text-right px-3 py-2">Qty</th>
+                          <th className="text-left px-3 py-2">Ref</th>
+                          <th className="text-left px-3 py-2">By</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {warehouseTransactions.map((row) => (
+                          <tr key={row.id} className="border-t border-border">
+                            <td className="px-3 py-2">{formatIsoDateDdMmYyyy(row.txn_date)}</td>
+                            <td className="px-3 py-2">{row.txn_type}</td>
+                            <td className="px-3 py-2">{row.item_en}</td>
+                            <td className="px-3 py-2 text-right font-medium">{row.signed_qty > 0 ? "+" : ""}{round2(row.signed_qty)}</td>
+                            <td className="px-3 py-2 text-xs text-muted-foreground">
+                              {row.ref_type || "-"} {row.ref_id ? `· ${row.ref_id}` : ""}
+                            </td>
+                            <td className="px-3 py-2">{row.created_by}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
           </section>
         )}
 
         {!isPurchaseMode && activeView === "users" && (
           <section className="bg-card rounded-lg border border-border p-4 mb-4 space-y-3">
             <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Users</h2>
+            <p className="text-xs text-muted-foreground">
+              Note: <code>/admin/login</code> currently uses the app config password. Admin role here is for app user records.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Status updates apply on next login. Already logged-in users may continue until logout.
+            </p>
             <form
               className="grid sm:grid-cols-5 gap-2"
               onSubmit={(e) => {
                 e.preventDefault();
-                if (!newUserName.trim() || !newUsername.trim() || !newUserPassword.trim()) return;
+                const trimmedName = newUserName.trim();
+                const trimmedUsername = newUsername.trim();
+                if (!trimmedName || !trimmedUsername || !newUserPassword.trim()) {
+                  setUserSuccess("");
+                  setUserError("Name, username, and password are required.");
+                  return;
+                }
                 createAppUser.mutate({
-                  name: newUserName.trim(),
-                  username: newUsername.trim(),
+                  name: trimmedName,
+                  username: trimmedUsername,
                   password: newUserPassword,
                   role: newUserRole,
                 });
               }}
             >
-              <Input value={newUserName} onChange={(e) => setNewUserName(e.target.value)} placeholder="Name" />
-              <Input value={newUsername} onChange={(e) => setNewUsername(e.target.value)} placeholder="Username" />
-              <Input type="password" value={newUserPassword} onChange={(e) => setNewUserPassword(e.target.value)} placeholder="Password" />
+              <Input
+                value={newUserName}
+                onChange={(e) => {
+                  setNewUserName(e.target.value);
+                  setUserError("");
+                }}
+                placeholder="Name"
+              />
+              <Input
+                value={newUsername}
+                onChange={(e) => {
+                  setNewUsername(e.target.value);
+                  setUserError("");
+                }}
+                placeholder="Username"
+              />
+              <Input
+                type="password"
+                value={newUserPassword}
+                onChange={(e) => {
+                  setNewUserPassword(e.target.value);
+                  setUserError("");
+                }}
+                placeholder="Password"
+              />
               <select
                 value={newUserRole}
                 onChange={(e) => setNewUserRole(e.target.value as "admin" | "purchase" | "sales")}
@@ -1744,20 +2405,42 @@ const AdminPanel = ({ mode = "admin" }: { mode?: "admin" | "purchase" }) => {
               </select>
               <Button type="submit" disabled={createAppUser.isPending}>Create</Button>
             </form>
+            {userError ? <p className="text-xs text-destructive">{userError}</p> : null}
+            {userSuccess ? <p className="text-xs text-emerald-700">{userSuccess}</p> : null}
             <div className="space-y-2">
-              {appUsers.map((user) => (
-                <div key={user.id} className="rounded-md border border-border p-2.5 flex items-center justify-between gap-2">
-                  <p className="text-sm">{user.name} · {user.username} · {user.role}</p>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={user.is_active ? "secondary" : "outline"}
-                    onClick={() => toggleAppUserStatus.mutate({ id: user.id, isActive: !user.is_active })}
-                  >
-                    {user.is_active ? "Active" : "Inactive"}
+              {isUsersLoading ? (
+                <p className="text-sm text-muted-foreground">Loading users...</p>
+              ) : usersError ? (
+                <div className="rounded-md border border-destructive/30 bg-destructive/5 p-2.5 flex items-center justify-between gap-2">
+                  <p className="text-sm text-destructive">
+                    {(usersError as Error).message || "Could not load users."}
+                  </p>
+                  <Button type="button" size="sm" variant="outline" onClick={() => refetchUsers()}>
+                    Retry
                   </Button>
                 </div>
-              ))}
+              ) : appUsers.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No users found.</p>
+              ) : (
+                appUsers.map((user) => {
+                  const isTogglePending =
+                    toggleAppUserStatus.isPending && pendingUserToggleId === user.id;
+                  return (
+                    <div key={user.id} className="rounded-md border border-border p-2.5 flex items-center justify-between gap-2">
+                      <p className="text-sm">{user.name} · {user.username} · {user.role}</p>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={user.is_active ? "secondary" : "outline"}
+                        disabled={isTogglePending}
+                        onClick={() => toggleAppUserStatus.mutate({ id: user.id, isActive: !user.is_active })}
+                      >
+                        {isTogglePending ? "Updating..." : user.is_active ? "Disable" : "Enable"}
+                      </Button>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </section>
         )}

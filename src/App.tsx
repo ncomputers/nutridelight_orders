@@ -9,6 +9,8 @@ import OrderPage from "./pages/OrderPage";
 const AdminLogin = lazy(() => import("./pages/AdminLogin"));
 const AdminPanel = lazy(() => import("./pages/AdminPanel"));
 const PurchaseLogin = lazy(() => import("./pages/PurchaseLogin"));
+const RestaurantLogin = lazy(() => import("./pages/RestaurantLogin"));
+const RestaurantPortal = lazy(() => import("./pages/RestaurantPortal"));
 const SalesListPage = lazy(() => import("./features/sales/pages/SalesListPage"));
 const CreateInvoicePage = lazy(() => import("./features/sales/pages/CreateInvoicePage"));
 const InvoiceViewPage = lazy(() => import("./features/sales/pages/InvoiceViewPage"));
@@ -22,13 +24,15 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      <BrowserRouter>
+      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <Suspense fallback={<div className="min-h-screen bg-background flex items-center justify-center text-muted-foreground">Loading...</div>}>
           <Routes>
             <Route path="/" element={<Navigate to="/order" replace />} />
             <Route path="/order" element={<OrderPage />} />
             <Route path="/admin/login" element={<AdminLogin />} />
             <Route path="/purchase/login" element={<PurchaseLogin />} />
+            <Route path="/restaurant/login" element={<RestaurantLogin />} />
+            <Route path="/restaurant" element={<RestaurantPortal />} />
             <Route path="/purchase/*" element={<AdminPanel mode="purchase" />} />
             <Route path="/admin/*" element={<AdminPanel mode="admin" />} />
             <Route path="/sales" element={<SalesListPage />} />

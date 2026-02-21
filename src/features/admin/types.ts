@@ -6,6 +6,13 @@ export interface OrderItem {
   category: string;
 }
 
+export interface PagedResult<T> {
+  rows: T[];
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
+}
+
 export interface Order {
   id: string;
   order_ref: string;
@@ -39,8 +46,8 @@ export type AdminView =
   | "delivery"
   | "sales"
   | "purchase"
+  | "warehouse"
   | "restaurants"
-  | "stock"
   | "users";
 
 export type DeliveryFilter = "active" | "ready" | "out" | "delivered" | "failed" | "all";
@@ -128,29 +135,38 @@ export interface PurchaseStockHistoryRow {
   total_variance_qty: number;
 }
 
+export interface WarehouseTransactionRow {
+  id: string;
+  txn_date: string;
+  txn_type: "purchase_in" | "dispatch_out" | "retail_out" | "adjustment";
+  item_code: string;
+  item_en: string;
+  qty: number;
+  signed_qty: number;
+  unit_price: number | null;
+  amount: number | null;
+  ref_type: string | null;
+  ref_id: string | null;
+  notes: string | null;
+  created_by: string;
+  created_at: string;
+}
+
 export interface FinalizePurchaseResult {
   purchase_date: string;
   run_id: string;
   already_finalized: boolean;
 }
 
-export type PurchaseNeedMode = "net" | "gross";
-
-export interface PurchaseDaySettingRow {
-  purchase_date: string;
-  need_mode: PurchaseNeedMode;
-}
-
 export interface PurchaseDemandRow {
   item_code: string;
   item_en: string;
-  restaurant_qty: number;
-  local_policy_qty: number;
-  carry_forward_qty: number;
-  gross_required_qty: number;
-  main_available_qty: number;
-  required_qty: number;
-  need_mode: PurchaseNeedMode;
+  restaurant_confirmed_qty: number;
+  required_stock_qty: number;
+  current_stock_qty: number;
+  warehouse_gap_qty: number;
+  raw_required_qty: number;
+  purchase_required_qty: number;
 }
 
 export interface InventoryLocationRow {
@@ -174,8 +190,7 @@ export interface LocalStorePolicyRow {
   id: string;
   item_code: string;
   item_en: string;
-  min_qty: number;
-  target_qty: number;
+  required_stock_qty: number;
   is_active: boolean;
   updated_at: string;
 }
@@ -206,9 +221,28 @@ export interface AppUserRow {
   id: string;
   name: string;
   username: string;
-  password: string;
+  password?: string | null;
   role: string;
   is_active: boolean;
+}
+
+export type SupportIssueStatus = "open" | "in_review" | "resolved";
+
+export interface SupportIssueRow {
+  id: string;
+  restaurant_id: string;
+  restaurant_name: string;
+  restaurant_slug: string;
+  order_id: string | null;
+  issue_type: string;
+  note: string;
+  photo_data_urls: string[];
+  status: SupportIssueStatus;
+  resolution_note: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  resolved_at: string | null;
 }
 
 export const CATEGORY_BADGES: Record<string, string> = {

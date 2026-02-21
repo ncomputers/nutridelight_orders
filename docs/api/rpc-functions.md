@@ -49,6 +49,471 @@ SECURITY DEFINER
 
 **Returns:** Table of orders with restaurant details
 
+### validate_order_status_transition
+
+Validates if an order status transition is allowed according to business rules.
+
+```sql
+CREATE OR REPLACE FUNCTION validate_order_status_transition(old_status text, new_status text)
+RETURNS boolean
+LANGUAGE plpgsql
+```
+
+**Parameters:**
+- `old_status`: Current order status
+- `new_status`: Desired new status
+
+**Returns:** Boolean indicating if transition is valid
+
+**Valid Transitions:**
+- `pending` → `confirmed`, `cancelled`
+- `confirmed` → `purchase_done`, `cancelled`
+- `purchase_done` → `out_for_delivery`, `cancelled`
+- `out_for_delivery` → `delivered`, `cancelled`
+- `delivered` → `invoiced`
+
+## Sales and Invoicing Functions
+
+### create_invoice_from_order
+
+Creates a sales invoice from a single order.
+
+```sql
+CREATE OR REPLACE FUNCTION create_invoice_from_order(p_order_id uuid)
+RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+```
+
+**Parameters:**
+- `p_order_id`: UUID of the order to invoice
+
+**Returns:** UUID of the created invoice
+
+**Logic:**
+1. Validates order exists and has restaurant_id
+2. Checks if invoice already exists for order
+3. Generates unique invoice number
+4. Creates invoice with order details
+5. Creates invoice line items from order items
+6. Calculates totals and payment status
+
+### create_invoice_from_orders
+
+Creates a consolidated sales invoice from multiple orders.
+
+```sql
+CREATE OR REPLACE FUNCTION create_invoice_from_orders(p_order_ids uuid[])
+RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+```
+
+**Parameters:**
+- `p_order_ids`: Array of order UUIDs to include in invoice
+
+**Returns:** UUID of the created invoice
+
+**Logic:**
+1. Validates all orders exist and belong to same restaurant
+2. Generates unique invoice number
+3. Creates consolidated invoice
+4. Creates line items from all orders
+5. Calculates combined totals
+
+### validate_invoice_status_transition
+
+Validates if an invoice status transition is allowed.
+
+```sql
+CREATE OR REPLACE FUNCTION validate_invoice_status_transition(old_status text, new_status text)
+RETURNS boolean
+LANGUAGE plpgsql
+```
+
+**Parameters:**
+- `old_status`: Current invoice status
+- `new_status`: Desired new status
+
+**Returns:** Boolean indicating if transition is valid
+
+**Valid Transitions:**
+- `draft` → `finalized`, `cancelled`
+- `finalized` → `cancelled`
+
+## Purchase Management Functions
+
+### get_purchase_demand
+
+Calculates purchase demand for a specific date.
+
+```sql
+CREATE OR REPLACE FUNCTION get_purchase_demand(
+  p_purchase_date date,
+  p_need_mode text default null
+)
+RETURNS table (
+  item_code text,
+  item_name text,
+  demand_qty numeric,
+  stock_qty numeric,
+  need_qty numeric,
+  category text
+)
+LANGUAGE plpgsql
+```
+
+**Parameters:**
+- `p_purchase_date`: Date to calculate demand for
+- `p_need_mode`: Calculation mode ('net', 'gross', etc.)
+
+**Returns:** Purchase demand breakdown by item
+
+### get_purchase_items
+
+Retrieves purchase items with status for a specific date.
+
+```sql
+CREATE OR REPLACE FUNCTION get_purchase_items(p_purchase_date date default current_date)
+RETURNS table (
+  item_code text,
+  item_name text,
+  required_qty numeric,
+  purchased_qty numeric,
+  remaining_qty numeric,
+  status text
+)
+LANGUAGE sql
+```
+
+**Parameters:**
+- `p_purchase_date`: Purchase date (default: today)
+
+**Returns:** Purchase items with quantities and status
+
+**Status Values:**
+- `pending`: Still need to purchase
+- `completed`: Fully purchased
+- `over`: Over-purchased
+
+### finalize_purchase
+
+Finalizes purchase planning for a specific day.
+
+```sql
+CREATE OR REPLACE FUNCTION finalize_purchase(p_purchase_day_id uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+```
+
+**Parameters:**
+- `p_purchase_day_id`: UUID of purchase day to finalize
+
+**Returns:** JSON with finalization results
+
+**Logic:**
+1. Validates purchase day can be finalized
+2. Updates purchase plan statuses
+3. Generates carry-forward for next day
+4. Updates stock quantities
+5. Creates audit trail
+
+### get_purchase_stock_history
+
+Retrieves purchase stock history for a date range.
+
+```sql
+CREATE OR REPLACE FUNCTION get_purchase_stock_history(
+  p_from_date date,
+  p_to_date date
+)
+RETURNS table (
+  purchase_date date,
+  item_code text,
+  item_name text,
+  opening_qty numeric,
+  purchased_qty numeric,
+  sold_qty numeric,
+  closing_qty numeric
+)
+LANGUAGE sql
+```
+
+**Parameters:**
+- `p_from_date`: Start date for history
+- `p_to_date`: End date for history
+
+**Returns:** Stock movement history
+
+## Restaurant Portal Functions
+
+### restaurant_portal_login
+
+Authenticates restaurant user for portal access.
+
+```sql
+CREATE OR REPLACE FUNCTION restaurant_portal_login(
+  p_username text,
+  p_pin text,
+  p_user_agent text default null
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+```
+
+**Parameters:**
+- `p_username`: Restaurant username
+- `p_pin`: PIN for authentication
+- `p_user_agent`: User agent string (optional)
+
+**Returns:** JSON with session token and user info
+
+### restaurant_portal_me
+
+Retrieves current restaurant user information.
+
+```sql
+CREATE OR REPLACE FUNCTION restaurant_portal_me(p_session_token text)
+RETURNS table (
+  restaurant_id uuid,
+  restaurant_name text,
+  username text,
+  session_created_at timestamptz
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+```
+
+**Parameters:**
+- `p_session_token`: Session token from login
+
+**Returns:** Restaurant user information
+
+### restaurant_portal_dashboard
+
+Retrieves dashboard data for restaurant portal.
+
+```sql
+CREATE OR REPLACE FUNCTION restaurant_portal_dashboard(p_session_token text)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+```
+
+**Parameters:**
+- `p_session_token`: Valid session token
+
+**Returns:** JSON with dashboard statistics and recent orders
+
+### restaurant_portal_list_orders
+
+Lists orders for the restaurant.
+
+```sql
+CREATE OR REPLACE FUNCTION restaurant_portal_list_orders(
+  p_session_token text,
+  p_limit integer default 10
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+```
+
+**Parameters:**
+- `p_session_token`: Valid session token
+- `p_limit`: Maximum orders to return
+
+**Returns:** JSON with order list
+
+### restaurant_portal_create_support_issue
+
+Creates a support issue from restaurant portal.
+
+```sql
+CREATE OR REPLACE FUNCTION restaurant_portal_create_support_issue(
+  p_session_token text,
+  p_order_id uuid default null,
+  p_issue_type text default 'other',
+  p_description text,
+  p_priority text default 'medium'
+)
+RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+```
+
+**Parameters:**
+- `p_session_token`: Valid session token
+- `p_order_id`: Related order (optional)
+- `p_issue_type`: Type of issue
+- `p_description`: Issue description
+- `p_priority`: Issue priority
+
+**Returns:** UUID of created support issue
+
+## Local Store and Transfer Functions
+
+### create_stock_transfer
+
+Creates a stock transfer between locations.
+
+```sql
+CREATE OR REPLACE FUNCTION create_stock_transfer(
+  p_from_location_code text,
+  p_to_location_code text,
+  p_lines jsonb,
+  p_notes text default null
+)
+RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+```
+
+**Parameters:**
+- `p_from_location_code`: Source location code
+- `p_to_location_code`: Destination location code
+- `p_lines`: JSON array of transfer line items
+- `p_notes`: Transfer notes (optional)
+
+**Returns:** UUID of created transfer
+
+**Line Item Format:**
+```json
+[
+  {
+    "item_code": "TOMATO",
+    "qty": 10.5,
+    "notes": "Ripe tomatoes"
+  }
+]
+```
+
+### generate_carry_forward_for_day
+
+Generates carry-forward stock for next day.
+
+```sql
+CREATE OR REPLACE FUNCTION generate_carry_forward_for_day(p_purchase_date date)
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+```
+
+**Parameters:**
+- `p_purchase_date`: Date to generate carry-forward for
+
+**Returns:** Number of items processed
+
+## System and Audit Functions
+
+### audit_status_transition
+
+Creates audit trail for status changes.
+
+```sql
+CREATE OR REPLACE FUNCTION audit_status_transition()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+```
+
+**Used as:** Trigger on orders and sales_invoices tables
+
+**Captures:**
+- Table name and record ID
+- Old and new status values
+- User who made the change
+- Timestamp of change
+- Reason for change (if provided)
+
+### sync_order_items_from_order
+
+Synchronizes order items when order is updated.
+
+```sql
+CREATE OR REPLACE FUNCTION sync_order_items_from_order()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+```
+
+**Used as:** Trigger on orders table
+
+**Logic:**
+- Extracts items from order JSON
+- Updates item_availability table
+- Maintains stock quantities
+
+## Utility Functions
+
+### assert_journal_voucher_balanced
+
+Ensures accounting journal vouchers are balanced.
+
+```sql
+CREATE OR REPLACE FUNCTION assert_journal_voucher_balanced(voucher_uuid UUID)
+RETURNS VOID
+LANGUAGE plpgsql
+```
+
+**Parameters:**
+- `voucher_uuid`: UUID of journal voucher to check
+
+**Logic:**
+- Sums all debit and credit entries
+- Raises exception if not balanced
+- Used as constraint check
+
+## Usage Examples
+
+### Creating an Invoice
+```typescript
+const { data, error } = await supabase.rpc('create_invoice_from_order', {
+  p_order_id: '123e4567-e89b-12d3-a456-426614174000'
+});
+```
+
+### Getting Purchase Demand
+```typescript
+const { data, error } = await supabase.rpc('get_purchase_demand', {
+  p_purchase_date: '2024-02-20',
+  p_need_mode: 'net'
+});
+```
+
+### Restaurant Portal Login
+```typescript
+const { data, error } = await supabase.rpc('restaurant_portal_login', {
+  p_username: 'hotel_hilltop',
+  p_pin: '1234',
+  p_user_agent: navigator.userAgent
+});
+```
+
+## Error Handling
+
+All RPC functions follow consistent error handling:
+- **Invalid parameters**: Raise exception with descriptive message
+- **Permission denied**: Return null or raise security exception
+- **Business rule violations**: Raise exception with rule explanation
+- **System errors**: Log error and raise generic exception
+
+## Performance Considerations
+
+- Functions use `SECURITY DEFINER` where needed for proper permissions
+- Complex queries include appropriate indexes
+- Bulk operations minimize round trips
+- Result sets are limited to prevent memory issues
+
+## Security Notes
+
+- All functions validate input parameters
+- Row Level Security policies apply to function operations
+- Sensitive operations require proper session context
+- Audit trail maintained for critical operations
+
 **Usage Example:**
 ```typescript
 const { data, error } = await supabase.rpc('get_orders_with_restaurants', {

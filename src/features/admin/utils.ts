@@ -13,7 +13,37 @@ export const getRestaurantOrderLink = (slug: string) => `${window.location.origi
 export const getAdminLoginLink = () => `${window.location.origin}/admin/login`;
 export const getAdminPanelLink = () => `${window.location.origin}/admin`;
 export const getPurchaseLink = () => `${window.location.origin}/purchase`;
-export const getStockLink = () => `${window.location.origin}/admin?view=stock`;
+export const getStockLink = () => `${window.location.origin}/admin?view=warehouse`;
+export const getCurrentPageLink = () => window.location.href;
+export const getRestaurantPortalLoginLink = (slug: string) => `${window.location.origin}/restaurant/login?r=${slug}`;
+
+export const copyTextToClipboard = async (value: string) => {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch {
+    // Fallback below handles non-secure HTTP contexts and older browsers.
+  }
+
+  try {
+    const textarea = document.createElement("textarea");
+    textarea.value = value;
+    textarea.setAttribute("readonly", "true");
+    textarea.style.position = "fixed";
+    textarea.style.left = "-9999px";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    textarea.setSelectionRange(0, textarea.value.length);
+    const copied = document.execCommand("copy");
+    document.body.removeChild(textarea);
+    return copied;
+  } catch {
+    return false;
+  }
+};
 
 export const getQrUrl = (link: string, size = 320) =>
   `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(link)}`;

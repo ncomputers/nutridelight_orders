@@ -21,6 +21,8 @@ interface SalesPanelProps {
 }
 
 const SalesPanel = ({ activeTab, onTabChange }: SalesPanelProps) => {
+  const ORDERS_PAGE_SIZE = 120;
+  const INVOICES_PAGE_SIZE = 120;
   const queryClient = useQueryClient();
   const purchaseSessionRaw = sessionStorage.getItem(APP_CONFIG.purchase.userKey);
   const purchaseSessionUser = useMemo(() => {
@@ -51,12 +53,15 @@ const SalesPanel = ({ activeTab, onTabChange }: SalesPanelProps) => {
   const [paymentNotes, setPaymentNotes] = useState("");
   const [salesError, setSalesError] = useState("");
   const [salesSuccess, setSalesSuccess] = useState("");
+  const [ordersPage, setOrdersPage] = useState(1);
+  const [invoicesPage, setInvoicesPage] = useState(1);
 
   const { data: deliveredOrders = [], isLoading: isOrdersLoading } = useQuery({
-    queryKey: salesQueryKeys.deliveredOrders(safeFromDate, safeToDate),
-    queryFn: () => salesRepository.listDeliveredOrders(safeFromDate, safeToDate),
+    queryKey: salesQueryKeys.deliveredOrders(safeFromDate, safeToDate, ordersPage, ORDERS_PAGE_SIZE),
+    queryFn: () => salesRepository.listDeliveredOrders(safeFromDate, safeToDate, ordersPage, ORDERS_PAGE_SIZE),
     staleTime: 15_000,
     refetchOnWindowFocus: false,
+    enabled: activeTab === "create",
   });
 
   const { data: invoicedOrderIds = [] } = useQuery({
@@ -64,14 +69,21 @@ const SalesPanel = ({ activeTab, onTabChange }: SalesPanelProps) => {
     queryFn: () => salesRepository.listInvoicedOrderIds(safeFromDate, safeToDate),
     staleTime: 15_000,
     refetchOnWindowFocus: false,
+    enabled: activeTab === "create",
   });
 
   const { data: salesInvoices = [], isLoading: isInvoicesLoading } = useQuery({
-    queryKey: salesQueryKeys.invoices(safeFromDate, safeToDate),
-    queryFn: () => salesRepository.listInvoices(safeFromDate, safeToDate),
+    queryKey: salesQueryKeys.invoices(safeFromDate, safeToDate, invoicesPage, INVOICES_PAGE_SIZE),
+    queryFn: () => salesRepository.listInvoices(safeFromDate, safeToDate, invoicesPage, INVOICES_PAGE_SIZE),
     staleTime: 15_000,
     refetchOnWindowFocus: false,
+    enabled: activeTab === "invoices" || activeTab === "payments",
   });
+
+  useEffect(() => {
+    setOrdersPage(1);
+    setInvoicesPage(1);
+  }, [safeFromDate, safeToDate]);
 
   const selectedInvoice = useMemo(
     () => salesInvoices.find((invoice) => invoice.id === selectedInvoiceId) || null,
@@ -159,8 +171,8 @@ const SalesPanel = ({ activeTab, onTabChange }: SalesPanelProps) => {
       setSelectedInvoiceId(invoiceId);
       setSelectedOrderIds([]);
       await Promise.all([
-        queryClient.refetchQueries({ queryKey: salesQueryKeys.invoices(safeFromDate, safeToDate) }),
-        queryClient.refetchQueries({ queryKey: salesQueryKeys.deliveredOrders(safeFromDate, safeToDate) }),
+        queryClient.refetchQueries({ queryKey: salesQueryKeys.invoices(safeFromDate, safeToDate, invoicesPage, INVOICES_PAGE_SIZE) }),
+        queryClient.refetchQueries({ queryKey: salesQueryKeys.deliveredOrders(safeFromDate, safeToDate, ordersPage, ORDERS_PAGE_SIZE) }),
         queryClient.refetchQueries({ queryKey: salesQueryKeys.invoicedOrderIds(safeFromDate, safeToDate) }),
         queryClient.refetchQueries({ queryKey: salesQueryKeys.invoiceLines(invoiceId) }),
         queryClient.refetchQueries({ queryKey: salesQueryKeys.invoiceOrders(invoiceId) }),
@@ -205,7 +217,7 @@ const SalesPanel = ({ activeTab, onTabChange }: SalesPanelProps) => {
       setSalesError("");
       if (selectedInvoiceId) {
         await Promise.all([
-          queryClient.refetchQueries({ queryKey: salesQueryKeys.invoices(safeFromDate, safeToDate) }),
+          queryClient.refetchQueries({ queryKey: salesQueryKeys.invoices(safeFromDate, safeToDate, invoicesPage, INVOICES_PAGE_SIZE) }),
           queryClient.refetchQueries({ queryKey: salesQueryKeys.invoiceLines(selectedInvoiceId) }),
           queryClient.refetchQueries({ queryKey: salesQueryKeys.payments(selectedInvoiceId) }),
         ]);
@@ -235,7 +247,7 @@ const SalesPanel = ({ activeTab, onTabChange }: SalesPanelProps) => {
       setWorkingLines([]);
       if (selectedInvoiceId) {
         await Promise.all([
-          queryClient.refetchQueries({ queryKey: salesQueryKeys.invoices(safeFromDate, safeToDate) }),
+          queryClient.refetchQueries({ queryKey: salesQueryKeys.invoices(safeFromDate, safeToDate, invoicesPage, INVOICES_PAGE_SIZE) }),
           queryClient.refetchQueries({ queryKey: salesQueryKeys.invoiceLines(selectedInvoiceId) }),
         ]);
       }
@@ -266,7 +278,7 @@ const SalesPanel = ({ activeTab, onTabChange }: SalesPanelProps) => {
       setPaymentNotes("");
       if (selectedInvoiceId) {
         await Promise.all([
-          queryClient.refetchQueries({ queryKey: salesQueryKeys.invoices(safeFromDate, safeToDate) }),
+          queryClient.refetchQueries({ queryKey: salesQueryKeys.invoices(safeFromDate, safeToDate, invoicesPage, INVOICES_PAGE_SIZE) }),
           queryClient.refetchQueries({ queryKey: salesQueryKeys.payments(selectedInvoiceId) }),
         ]);
       }
@@ -329,7 +341,7 @@ const SalesPanel = ({ activeTab, onTabChange }: SalesPanelProps) => {
       <div className="bg-card rounded-lg border border-border p-4">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
           <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Sales</h2>
-          <div className="flex items-center gap-2 text-xs">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="text-muted-foreground">From</span>
             <Input
               type="date"
@@ -346,6 +358,48 @@ const SalesPanel = ({ activeTab, onTabChange }: SalesPanelProps) => {
               onChange={(e) => setToDate(e.target.value || todayIso)}
               className="h-9 w-[150px]"
             />
+            {activeTab === "create" && (
+              <>
+                <button
+                  type="button"
+                  className="h-9 px-3 rounded-md border border-border bg-card hover:bg-accent disabled:opacity-50"
+                  disabled={ordersPage <= 1}
+                  onClick={() => setOrdersPage((prev) => Math.max(1, prev - 1))}
+                >
+                  Prev Orders
+                </button>
+                <span className="text-muted-foreground">Page {ordersPage}</span>
+                <button
+                  type="button"
+                  className="h-9 px-3 rounded-md border border-border bg-card hover:bg-accent disabled:opacity-50"
+                  disabled={deliveredOrders.length < ORDERS_PAGE_SIZE}
+                  onClick={() => setOrdersPage((prev) => prev + 1)}
+                >
+                  Next Orders
+                </button>
+              </>
+            )}
+            {(activeTab === "invoices" || activeTab === "payments") && (
+              <>
+                <button
+                  type="button"
+                  className="h-9 px-3 rounded-md border border-border bg-card hover:bg-accent disabled:opacity-50"
+                  disabled={invoicesPage <= 1}
+                  onClick={() => setInvoicesPage((prev) => Math.max(1, prev - 1))}
+                >
+                  Prev Invoices
+                </button>
+                <span className="text-muted-foreground">Page {invoicesPage}</span>
+                <button
+                  type="button"
+                  className="h-9 px-3 rounded-md border border-border bg-card hover:bg-accent disabled:opacity-50"
+                  disabled={salesInvoices.length < INVOICES_PAGE_SIZE}
+                  onClick={() => setInvoicesPage((prev) => prev + 1)}
+                >
+                  Next Invoices
+                </button>
+              </>
+            )}
           </div>
         </div>
 

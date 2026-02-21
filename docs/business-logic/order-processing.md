@@ -4,7 +4,7 @@
 
 Order processing is the core business function of Nutridelight Orders, encompassing the entire lifecycle from customer order placement to final delivery and invoicing. This document details the business rules, calculations, and validation logic that govern order processing.
 
-## Order Lifecycle
+## Enhanced Order Lifecycle
 
 ### Status Flow
 
@@ -13,6 +13,15 @@ pending → confirmed → purchase_done → out_for_delivery → delivered → i
     ↓           ↓            ↓              ↓           ↓
   rejected   failed      cancelled     returned    cancelled
 ```
+
+### Restaurant Portal Integration
+
+The restaurant portal enables self-service order management:
+
+- **Direct QR Access**: Restaurants can access portal without admin intervention
+- **Order History**: View complete order history and status
+- **Support Issues**: Create and track support requests
+- **Account Management**: Update restaurant information
 
 ### Status Definitions
 
@@ -42,6 +51,34 @@ const validTransitions = {
   failed: ['pending'], // Can retry
   cancelled: [] // Terminal state
 };
+```
+
+### Status Transition Validation
+
+All status transitions are validated through database triggers:
+
+```sql
+CREATE OR REPLACE FUNCTION validate_order_status_transition(old_status text, new_status text)
+RETURNS boolean
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  -- Business logic validation
+  IF old_status = 'pending' AND new_status NOT IN ('confirmed', 'rejected', 'cancelled') THEN
+    RETURN false;
+  ELSIF old_status = 'confirmed' AND new_status NOT IN ('purchase_done', 'cancelled') THEN
+    RETURN false;
+  ELSIF old_status = 'purchase_done' AND new_status NOT IN ('out_for_delivery', 'failed') THEN
+    RETURN false;
+  ELSIF old_status = 'out_for_delivery' AND new_status NOT IN ('delivered', 'returned', 'failed') THEN
+    RETURN false;
+  ELSIF old_status = 'delivered' AND new_status NOT IN ('invoiced') THEN
+    RETURN false;
+  END IF;
+  
+  RETURN true;
+END;
+$$;
 ```
 
 ## Order Creation Logic
@@ -158,6 +195,151 @@ const createOrder = async (orderData: CreateOrderRequest) => {
   
   return order;
 };
+```
+
+## Enhanced Purchase Planning Logic
+
+### Multi-Location Stock Management
+
+The system supports multiple store locations with stock transfers:
+
+```typescript
+interface StockLocation {
+  store_code: string;
+  store_name: string;
+  location_type: 'store' | 'warehouse' | 'central';
+  current_stock: Map<string, number>;
+}
+
+interface StockTransfer {
+  transfer_no: string;
+  from_store: string;
+  to_store: string;
+  items: TransferItem[];
+  status: 'pending' | 'approved' | 'in_transit' | 'completed';
+}
+```
+
+### Central Warehouse Mode
+
+When central warehouse mode is enabled:
+
+1. **All purchases** go through central warehouse
+2. **Stock distribution** managed via transfers
+3. **Local stores** request stock via internal transfers
+4. **Purchase planning** considers total demand across all locations
+
+### Purchase Demand Calculation
+
+```sql
+CREATE OR REPLACE FUNCTION get_purchase_demand(
+  p_purchase_date date,
+  p_need_mode text default null
+)
+RETURNS table (
+  item_code text,
+  item_name text,
+  demand_qty numeric,
+  stock_qty numeric,
+  need_qty numeric,
+  category text
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_need_mode text := COALESCE(p_need_mode, 'net');
+BEGIN
+  RETURN QUERY
+  WITH demand AS (
+    SELECT 
+      item_code,
+      SUM(final_qty) as total_demand
+    FROM purchase_plans 
+    WHERE purchase_date = p_purchase_date
+    GROUP BY item_code
+  ),
+  stock AS (
+    SELECT 
+      item_code,
+      stock_qty
+    FROM item_availability
+    WHERE is_available = true
+  )
+  SELECT 
+    d.item_code,
+    ia.item_en as item_name,
+    d.total_demand,
+    COALESCE(s.stock_qty, 0),
+    CASE 
+      WHEN v_need_mode = 'gross' THEN d.total_demand
+      ELSE GREATEST(0, d.total_demand - COALESCE(s.stock_qty, 0))
+    END as need_qty,
+    ia.category
+  FROM demand d
+  LEFT JOIN item_availability ia ON d.item_code = ia.item_code
+  LEFT JOIN stock s ON d.item_code = s.item_code
+  ORDER BY ia.category, d.item_code;
+END;
+$$;
+```
+
+### Stock History Tracking
+
+Daily stock movements are tracked for analysis:
+
+```typescript
+interface StockHistory {
+  purchase_date: Date;
+  item_code: string;
+  opening_qty: number;
+  purchased_qty: number;
+  sold_qty: number;
+  transferred_in_qty: number;
+  transferred_out_qty: number;
+  closing_qty: number;
+  wastage_qty: number;
+}
+
+const calculateDailyStockHistory = (date: Date): StockHistory[] => {
+  return items.map(item => ({
+    purchase_date: date,
+    item_code: item.code,
+    opening_qty: getOpeningStock(item.code, date),
+    purchased_qty: getPurchasedQuantity(item.code, date),
+    sold_qty: getSoldQuantity(item.code, date),
+    transferred_in_qty: getTransferredIn(item.code, date),
+    transferred_out_qty: getTransferredOut(item.code, date),
+    closing_qty: calculateClosingStock(item.code, date),
+    wastage_qty: getWastageQuantity(item.code, date)
+  }));
+};
+```
+
+### Carry Forward Logic
+
+Stock quantities are carried forward to the next day:
+
+```sql
+CREATE OR REPLACE FUNCTION generate_carry_forward_for_day(p_purchase_date date)
+RETURNS integer
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_count integer := 0;
+  v_next_date date := p_purchase_date + 1;
+BEGIN
+  -- Update item availability with closing stock
+  UPDATE item_availability ia
+  SET stock_qty = COALESCE(sh.closing_qty, 0)
+  FROM purchase_stock_history sh
+  WHERE sh.purchase_date = p_purchase_date
+    AND ia.item_code = sh.item_code;
+  
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  
+  RETURN v_count;
+END;
+$$;
 ```
 
 ## Order Confirmation Logic

@@ -1,3 +1,4 @@
+import { Button } from "@/components/ui/button";
 import type { PurchasePlanRow } from "@/features/admin/types";
 import BuyItemCard from "@/features/purchase/components/BuyItemCard";
 
@@ -16,7 +17,7 @@ interface PurchaseBuyPageProps {
   onPrev: () => void;
   onSaveAndNext: () => void;
   onSkip: () => void;
-  onFinalize: () => void;
+  onReviewFinalize: () => void;
   onBackToPlan: () => void;
 }
 
@@ -35,14 +36,20 @@ const PurchaseBuyPage = ({
   onPrev,
   onSaveAndNext,
   onSkip,
-  onFinalize: _onFinalize,
+  onReviewFinalize,
   onBackToPlan: _onBackToPlan,
 }: PurchaseBuyPageProps) => {
+  const isAllCompleted = totalCount > 0 && pendingCount === 0;
   return (
     <section className="bg-card rounded-lg border border-border p-4 mb-4 space-y-4">
       <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Buy Flow</h2>
-      {totalCount > 0 && pendingCount === 0 ? (
-        <p className="text-xs text-emerald-700">All items completed. You can still open and edit any item here.</p>
+      {isAllCompleted ? (
+        <div className="rounded-md border border-emerald-300 bg-emerald-50 p-3 space-y-2">
+          <p className="text-xs text-emerald-700">All items completed. Review summary before finalizing.</p>
+          <Button type="button" size="sm" onClick={onReviewFinalize}>
+            Review & Finalize
+          </Button>
+        </div>
       ) : null}
 
       <BuyItemCard

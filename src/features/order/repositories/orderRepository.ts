@@ -16,7 +16,8 @@ export const orderRepository = {
   async listItemAvailability() {
     const { data, error } = await supabase
       .from("item_availability")
-      .select("item_code,item_en,is_in_stock,icon_url");
+      .select("item_code,item_en,is_in_stock,icon_url")
+      .limit(1000);
     if (error) throw error;
     return (data ?? []) as ItemAvailabilityRow[];
   },

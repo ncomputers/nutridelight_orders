@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import OrderSelector from "@/features/sales/components/OrderSelector";
 import { useSalesAccess } from "@/features/sales/pages/useSalesAccess";
 
 const CreateInvoicePage = ({ basePath = "/sales" }: { basePath?: string }) => {
+  const PAGE_SIZE = 120;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { hasSalesAccess } = useSalesAccess();
@@ -21,10 +22,15 @@ const CreateInvoicePage = ({ basePath = "/sales" }: { basePath?: string }) => {
   const safeToDate = fromDate <= toDate ? toDate : fromDate;
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
   const [error, setError] = useState("");
+  const [ordersPage, setOrdersPage] = useState(1);
+
+  useEffect(() => {
+    setOrdersPage(1);
+  }, [safeFromDate, safeToDate]);
 
   const { data: deliveredOrders = [], isLoading: isOrdersLoading } = useQuery({
-    queryKey: salesQueryKeys.deliveredOrders(safeFromDate, safeToDate),
-    queryFn: () => salesRepository.listDeliveredOrders(safeFromDate, safeToDate),
+    queryKey: salesQueryKeys.deliveredOrders(safeFromDate, safeToDate, ordersPage, PAGE_SIZE),
+    queryFn: () => salesRepository.listDeliveredOrders(safeFromDate, safeToDate, ordersPage, PAGE_SIZE),
     enabled: hasSalesAccess,
     staleTime: 15_000,
     refetchOnWindowFocus: false,
@@ -53,8 +59,8 @@ const CreateInvoicePage = ({ basePath = "/sales" }: { basePath?: string }) => {
     onSuccess: async (invoiceId) => {
       setError("");
       await Promise.all([
-        queryClient.refetchQueries({ queryKey: salesQueryKeys.invoices(safeFromDate, safeToDate) }),
-        queryClient.refetchQueries({ queryKey: salesQueryKeys.deliveredOrders(safeFromDate, safeToDate) }),
+        queryClient.refetchQueries({ queryKey: ["sales", "invoices"] }),
+        queryClient.refetchQueries({ queryKey: ["sales", "delivered-orders"] }),
         queryClient.refetchQueries({ queryKey: salesQueryKeys.invoicedOrderIds(safeFromDate, safeToDate) }),
       ]);
       navigate(`${basePath}/${invoiceId}/edit`);
@@ -109,6 +115,19 @@ const CreateInvoicePage = ({ basePath = "/sales" }: { basePath?: string }) => {
             onChange={(e) => setToDate(e.target.value || todayIso)}
             className="h-9 w-[150px]"
           />
+          <Button type="button" size="sm" variant="outline" disabled={ordersPage <= 1} onClick={() => setOrdersPage((prev) => Math.max(1, prev - 1))}>
+            Prev
+          </Button>
+          <span className="text-muted-foreground">Page {ordersPage}</span>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={deliveredOrders.length < PAGE_SIZE}
+            onClick={() => setOrdersPage((prev) => prev + 1)}
+          >
+            Next
+          </Button>
         </div>
 
         {error && <p className="text-xs text-destructive">{error}</p>}

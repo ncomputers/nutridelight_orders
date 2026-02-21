@@ -8,7 +8,11 @@ import type {
 } from "@/features/sales/types";
 
 export const salesRepository = {
-  async listDeliveredOrders(fromDate: string, toDate: string) {
+  async listDeliveredOrders(fromDate: string, toDate: string, page = 1, pageSize = 1000) {
+    const safePageSize = Math.max(1, Math.min(pageSize, 500));
+    const safePage = Math.max(1, page);
+    const from = (safePage - 1) * safePageSize;
+    const to = from + safePageSize - 1;
     const { data, error } = await supabase
       .from("orders")
       .select("id,order_ref,restaurant_id,restaurant_name,restaurant_slug,delivery_date,created_at,items")
@@ -16,60 +20,72 @@ export const salesRepository = {
       .gte("delivery_date", fromDate)
       .lte("delivery_date", toDate)
       .order("delivery_date", { ascending: false })
-      .limit(1000);
+      .range(from, to);
     if (error) throw error;
     return (data ?? []) as unknown as DeliveredOrder[];
   },
 
-  async listInvoices(fromDate: string, toDate: string) {
+  async listInvoices(fromDate: string, toDate: string, page = 1, pageSize = 1000) {
+    const safePageSize = Math.max(1, Math.min(pageSize, 500));
+    const safePage = Math.max(1, page);
+    const from = (safePage - 1) * safePageSize;
+    const to = from + safePageSize - 1;
     const { data, error } = await supabase
       .from("sales_invoices")
       .select("*")
       .gte("invoice_date", fromDate)
       .lte("invoice_date", toDate)
       .order("created_at", { ascending: false })
-      .limit(1000);
+      .range(from, to);
     if (error) throw error;
     return (data ?? []) as SalesInvoice[];
   },
 
-  async listInvoicedOrderIds(fromDate: string, toDate: string) {
+  async listInvoicedOrderIds(fromDate: string, toDate: string, limit = 2000) {
+    const safeLimit = Math.max(1, Math.min(limit, 5000));
     const { data, error } = await supabase
       .from("sales_invoice_orders")
       .select("order_id,sales_invoices!inner(invoice_date)")
       .gte("sales_invoices.invoice_date", fromDate)
-      .lte("sales_invoices.invoice_date", toDate);
+      .lte("sales_invoices.invoice_date", toDate)
+      .limit(safeLimit);
     if (error) throw error;
     return Array.from(new Set(((data ?? []) as Array<{ order_id: string }>).map((row) => row.order_id)));
   },
 
-  async getInvoiceLines(invoiceId: string) {
+  async getInvoiceLines(invoiceId: string, limit = 300) {
+    const safeLimit = Math.max(1, Math.min(limit, 1000));
     const { data, error } = await supabase
       .from("sales_invoice_lines")
       .select("*")
       .eq("invoice_id", invoiceId)
-      .order("item_en", { ascending: true });
+      .order("item_en", { ascending: true })
+      .limit(safeLimit);
     if (error) throw error;
     return (data ?? []) as SalesInvoiceLine[];
   },
 
-  async listInvoiceOrders(invoiceId: string) {
+  async listInvoiceOrders(invoiceId: string, limit = 300) {
+    const safeLimit = Math.max(1, Math.min(limit, 1000));
     const { data, error } = await supabase
       .from("sales_invoice_orders")
       .select("id,invoice_id,order_id,created_at")
       .eq("invoice_id", invoiceId)
-      .order("created_at", { ascending: true });
+      .order("created_at", { ascending: true })
+      .limit(safeLimit);
     if (error) throw error;
     return (data ?? []) as SalesInvoiceOrder[];
   },
 
-  async listPayments(invoiceId: string) {
+  async listPayments(invoiceId: string, limit = 300) {
+    const safeLimit = Math.max(1, Math.min(limit, 1000));
     const { data, error } = await supabase
       .from("sales_payments")
       .select("id,invoice_id,amount,payment_date,method,notes,created_at")
       .eq("invoice_id", invoiceId)
       .order("payment_date", { ascending: false })
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .limit(safeLimit);
     if (error) throw error;
     return (data ?? []) as SalesPayment[];
   },

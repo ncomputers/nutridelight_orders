@@ -5,21 +5,27 @@ import { Input } from "@/components/ui/input";
 import { salesQueryKeys } from "@/features/sales/queryKeys";
 import { salesRepository } from "@/features/sales/repositories/salesRepository";
 import { formatIsoDateDdMmYyyy, getIndiaDateDaysAgoIso, getIndiaDateIso } from "@/lib/datetime";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSalesAccess } from "@/features/sales/pages/useSalesAccess";
 
 const SalesListPage = ({ basePath = "/sales" }: { basePath?: string }) => {
+  const PAGE_SIZE = 120;
   const navigate = useNavigate();
   const { hasSalesAccess } = useSalesAccess();
   const todayIso = getIndiaDateIso();
   const [fromDate, setFromDate] = useState(getIndiaDateDaysAgoIso(30));
   const [toDate, setToDate] = useState(todayIso);
+  const [page, setPage] = useState(1);
   const safeFromDate = fromDate <= toDate ? fromDate : toDate;
   const safeToDate = fromDate <= toDate ? toDate : fromDate;
 
+  useEffect(() => {
+    setPage(1);
+  }, [safeFromDate, safeToDate]);
+
   const { data: invoices = [], isLoading } = useQuery({
-    queryKey: salesQueryKeys.invoices(safeFromDate, safeToDate),
-    queryFn: () => salesRepository.listInvoices(safeFromDate, safeToDate),
+    queryKey: salesQueryKeys.invoices(safeFromDate, safeToDate, page, PAGE_SIZE),
+    queryFn: () => salesRepository.listInvoices(safeFromDate, safeToDate, page, PAGE_SIZE),
     enabled: hasSalesAccess,
     staleTime: 15_000,
     refetchOnWindowFocus: false,
@@ -54,6 +60,19 @@ const SalesListPage = ({ basePath = "/sales" }: { basePath?: string }) => {
             onChange={(e) => setToDate(e.target.value || todayIso)}
             className="h-9 w-[150px]"
           />
+          <Button type="button" size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage((prev) => Math.max(1, prev - 1))}>
+            Prev
+          </Button>
+          <span className="text-muted-foreground">Page {page}</span>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={invoices.length < PAGE_SIZE}
+            onClick={() => setPage((prev) => prev + 1)}
+          >
+            Next
+          </Button>
         </div>
 
         {isLoading ? (

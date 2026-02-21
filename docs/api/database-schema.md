@@ -335,6 +335,272 @@ CREATE TABLE public.journal_entries (
 );
 ```
 
+## Enhanced Features Tables
+
+### restaurant_portal_settings
+
+Stores restaurant portal configuration and authentication.
+
+```sql
+CREATE TABLE public.restaurant_portal_settings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  restaurant_id UUID NOT NULL REFERENCES public.restaurants(id) ON DELETE CASCADE,
+  username TEXT UNIQUE NOT NULL,
+  pin_hash TEXT NOT NULL,
+  is_active BOOLEAN DEFAULT true,
+  last_login_at TIMESTAMPTZ,
+  login_attempts INTEGER DEFAULT 0,
+  locked_until TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (restaurant_id)
+);
+```
+
+**Fields:**
+- `id`: Unique identifier (UUID)
+- `restaurant_id`: Associated restaurant
+- `username`: Portal username
+- `pin_hash`: Hashed PIN for authentication
+- `is_active`: Whether portal access is enabled
+- `last_login_at`: Last successful login timestamp
+- `login_attempts`: Failed login attempt count
+- `locked_until`: Account lockout expiration
+- `created_at`: Record creation timestamp
+- `updated_at`: Last update timestamp
+
+**Security Policies:**
+- Restaurant can read/write own settings
+- Admin can manage all settings
+
+### restaurant_support_issues
+
+Tracks support requests from restaurant portal.
+
+```sql
+CREATE TABLE public.restaurant_support_issues (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  restaurant_id UUID NOT NULL REFERENCES public.restaurants(id),
+  order_id UUID REFERENCES public.orders(id),
+  issue_type TEXT NOT NULL DEFAULT 'other',
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  priority TEXT DEFAULT 'medium',
+  status TEXT DEFAULT 'open',
+  resolution_note TEXT,
+  resolved_by UUID REFERENCES public.app_users(id),
+  resolved_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+**Fields:**
+- `id`: Unique identifier (UUID)
+- `restaurant_id`: Restaurant creating the issue
+- `order_id`: Related order (optional)
+- `issue_type`: Type of issue (order, billing, technical, other)
+- `title`: Issue title/summary
+- `description`: Detailed issue description
+- `priority`: Issue priority (low, medium, high, urgent)
+- `status`: Issue status (open, in_progress, resolved, closed)
+- `resolution_note`: Resolution details
+- `resolved_by`: Admin who resolved the issue
+- `resolved_at`: Resolution timestamp
+- `created_at`: Record creation timestamp
+- `updated_at`: Last update timestamp
+
+### local_stores
+
+Manages multiple store/warehouse locations.
+
+```sql
+CREATE TABLE public.local_stores (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  store_code TEXT UNIQUE NOT NULL,
+  store_name TEXT NOT NULL,
+  location_type TEXT DEFAULT 'store',
+  address TEXT,
+  contact_phone TEXT,
+  is_active BOOLEAN DEFAULT true,
+  is_central_warehouse BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+**Fields:**
+- `id`: Unique identifier (UUID)
+- `store_code`: Unique store identifier
+- `store_name`: Display name
+- `location_type`: Type (store, warehouse, central)
+- `address`: Physical address
+- `contact_phone`: Contact number
+- `is_active`: Whether location is active
+- `is_central_warehouse`: Central warehouse flag
+- `created_at`: Record creation timestamp
+- `updated_at`: Last update timestamp
+
+### stock_transfers
+
+Tracks stock transfers between locations.
+
+```sql
+CREATE TABLE public.stock_transfers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  transfer_no TEXT UNIQUE NOT NULL,
+  from_store_id UUID NOT NULL REFERENCES public.local_stores(id),
+  to_store_id UUID NOT NULL REFERENCES public.local_stores(id),
+  transfer_date DATE NOT NULL,
+  status TEXT DEFAULT 'pending',
+  notes TEXT,
+  created_by UUID REFERENCES public.app_users(id),
+  approved_by UUID REFERENCES public.app_users(id),
+  approved_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+**Fields:**
+- `id`: Unique identifier (UUID)
+- `transfer_no`: Unique transfer number
+- `from_store_id`: Source location
+- `to_store_id`: Destination location
+- `transfer_date`: Transfer date
+- `status`: Transfer status (pending, approved, in_transit, completed, cancelled)
+- `notes`: Transfer notes
+- `created_by`: User who created transfer
+- `approved_by`: User who approved transfer
+- `approved_at`: Approval timestamp
+- `completed_at`: Completion timestamp
+- `created_at`: Record creation timestamp
+- `updated_at`: Last update timestamp
+
+### stock_transfer_lines
+
+Line items for stock transfers.
+
+```sql
+CREATE TABLE public.stock_transfer_lines (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  transfer_id UUID NOT NULL REFERENCES public.stock_transfers(id) ON DELETE CASCADE,
+  item_code TEXT NOT NULL,
+  item_name TEXT NOT NULL,
+  qty NUMERIC NOT NULL CHECK (qty > 0),
+  unit TEXT DEFAULT 'kg',
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+**Fields:**
+- `id`: Unique identifier (UUID)
+- `transfer_id`: Parent transfer ID
+- `item_code`: Item identifier
+- `item_name`: Item display name
+- `qty`: Transfer quantity
+- `unit`: Unit of measurement
+- `notes`: Line item notes
+- `created_at`: Record creation timestamp
+- `updated_at`: Last update timestamp
+
+### purchase_stock_history
+
+Tracks daily stock movements for purchase planning.
+
+```sql
+CREATE TABLE public.purchase_stock_history (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  purchase_date DATE NOT NULL,
+  item_code TEXT NOT NULL,
+  item_name TEXT NOT NULL,
+  opening_qty NUMERIC DEFAULT 0,
+  purchased_qty NUMERIC DEFAULT 0,
+  sold_qty NUMERIC DEFAULT 0,
+  transferred_in_qty NUMERIC DEFAULT 0,
+  transferred_out_qty NUMERIC DEFAULT 0,
+  closing_qty NUMERIC DEFAULT 0,
+  wastage_qty NUMERIC DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (purchase_date, item_code)
+);
+```
+
+**Fields:**
+- `id`: Unique identifier (UUID)
+- `purchase_date`: Date of stock movement
+- `item_code`: Item identifier
+- `item_name`: Item display name
+- `opening_qty`: Opening stock quantity
+- `purchased_qty`: Quantity purchased
+- `sold_qty`: Quantity sold to customers
+- `transferred_in_qty`: Quantity received from transfers
+- `transferred_out_qty`: Quantity sent via transfers
+- `closing_qty`: Closing stock quantity
+- `wastage_qty`: Quantity wasted/lost
+- `created_at`: Record creation timestamp
+
+### audit_status_transitions
+
+Audit trail for status changes.
+
+```sql
+CREATE TABLE public.audit_status_transitions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  table_name TEXT NOT NULL,
+  record_id UUID NOT NULL,
+  old_status TEXT,
+  new_status TEXT NOT NULL,
+  actor_type TEXT NOT NULL,
+  actor_id UUID,
+  actor_name TEXT,
+  reason TEXT,
+  metadata JSONB,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+**Fields:**
+- `id`: Unique identifier (UUID)
+- `table_name`: Table where change occurred
+- `record_id`: ID of affected record
+- `old_status`: Previous status value
+- `new_status`: New status value
+- `actor_type`: Type of actor (user, system, rpc)
+- `actor_id`: ID of actor who made change
+- `actor_name`: Name/description of actor
+- `reason`: Reason for status change
+- `metadata`: Additional context data
+- `created_at`: Timestamp of change
+
+### warehouse_config
+
+Configuration for warehouse operations.
+
+```sql
+CREATE TABLE public.warehouse_config (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  config_key TEXT UNIQUE NOT NULL,
+  config_value TEXT,
+  description TEXT,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+**Fields:**
+- `id`: Unique identifier (UUID)
+- `config_key`: Configuration key
+- `config_value`: Configuration value
+- `description`: Configuration description
+- `is_active`: Whether configuration is active
+- `created_at`: Record creation timestamp
+- `updated_at`: Last update timestamp
+
 ## System Tables
 
 ### app_users

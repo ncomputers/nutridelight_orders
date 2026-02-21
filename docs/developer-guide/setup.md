@@ -2,7 +2,7 @@
 
 ## Overview
 
-This guide helps developers set up the Nutridelight Orders development environment and understand the codebase structure.
+This guide helps developers set up the Nutridelight Orders development environment and understand the enhanced codebase structure with new features like restaurant portal, item icons, and multi-location stock management.
 
 ## Prerequisites
 
@@ -17,6 +17,7 @@ This guide helps developers set up the Nutridelight Orders development environme
 - **Postman**: For API testing
 - **DBeaver**: For database management
 - **Supabase CLI**: For database operations
+- **ImageMagick**: For image compression (item icons)
 
 ## Environment Setup
 
@@ -48,6 +49,62 @@ VITE_SUPABASE_PUBLISHABLE_KEY=your-supabase-anon-key
 
 # Admin Configuration
 VITE_ADMIN_PASSWORD=your-admin-password
+
+# Development Configuration
+VITE_ADMIN_POLL_INTERVAL_MS=30000
+```
+
+### 5. Database Setup
+```bash
+# Install Supabase CLI (if not already installed)
+npm install -g supabase
+
+# Link to your Supabase project
+supabase link --project-ref your-project-ref
+
+# Run database migrations
+supabase db push
+
+# Seed development data
+supabase db seed
+```
+
+## Enhanced Project Structure
+
+### Core Components
+```
+src/
+├── components/
+│   ├── ItemIcon.tsx           # Item icon display
+│   ├── ItemIconUploader.tsx   # Icon upload with compression
+│   ├── Sidebar.tsx            # Navigation sidebar
+│   ├── TopTabs.tsx            # Top navigation tabs
+│   └── ui/                    # shadcn/ui components
+├── features/
+│   ├── order/                 # Customer ordering
+│   ├── sales/                 # Invoicing and payments
+│   ├── admin/                 # Admin operations
+│   ├── purchase/              # Purchase planning
+│   └── restaurantPortal/      # NEW: Restaurant self-service
+├── layouts/
+│   ├── MainLayout.tsx         # Main application layout
+│   └── ModuleLayout.tsx       # Feature-specific layout
+└── lib/
+    ├── imageCompression.ts    # NEW: Image processing
+    └── navigation.ts          # Navigation utilities
+```
+
+### Feature Architecture
+Each feature follows the clean architecture pattern:
+```
+features/[feature]/
+├── domain/           # Pure business logic
+├── repositories/     # Data access layer
+├── queryKeys.ts     # React Query key factories
+├── types.ts         # Feature-specific types
+├── components/      # Feature components
+└── pages/           # Feature-specific pages
+```
 VITE_ADMIN_POLL_INTERVAL_MS=15000
 ```
 

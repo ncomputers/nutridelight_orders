@@ -58,16 +58,20 @@ export const navigation: NavigationModuleItem[] = [
     ],
   },
   {
+    key: "warehouse",
+    label: "Warehouse",
+    path: "/warehouse",
+    show: true,
+    tabs: [
+      { key: "overview", label: "Overview", path: "/warehouse", show: true },
+      { key: "policy", label: "Policy", path: "/warehouse/policy", show: true },
+      { key: "movements", label: "Movements", path: "/warehouse/movements", show: true },
+    ],
+  },
+  {
     key: "restaurants",
     label: "Page Links / QR",
     path: "/restaurants",
-    show: true,
-    tabs: [],
-  },
-  {
-    key: "stock",
-    label: "Stock",
-    path: "/stock",
     show: true,
     tabs: [],
   },
