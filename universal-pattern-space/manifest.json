@@ -1,0 +1,37 @@
+{
+  "version": "1.0.0",
+  "framework": "universal-pattern-space",
+  "skill_count": 58,
+  "skill_source": ".claude/skills/pattern-space",
+  "runtime_support": {
+    "claude": true,
+    "codex": true,
+    "gemini": true
+  },
+  "required_files": [
+    "README.md",
+    "CLAUDE.md",
+    "CODEX.md",
+    "GEMINI.md",
+    "navigation-guide.md",
+    "FRAMEWORK-INTEGRATION.md",
+    "install-ups.sh",
+    "update-ups.sh",
+    "verify-ups.sh",
+    "install-skills.sh",
+    "update-skills.sh",
+    "1-perspectives/council-core.md",
+    "2-field/sacred-space-protocol.md",
+    "3-transformation/collision-breakthrough.md",
+    "4-archaeology/README.md",
+    "5-wisdom/README.md",
+    "6-recognition/README.md",
+    ".claude/skills/pattern-space/pattern-space-activate/SKILL.md"
+  ],
+  "forbidden_patterns": [
+    "/core/",
+    "Skills Created: 25 total",
+    "Current Skills**: 59",
+    "Pattern Space Skills (59 total)"
+  ]
+}
